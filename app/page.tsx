@@ -26,7 +26,10 @@ export default function Home() {
   const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
   const canvasRef = useRef<HTMLDivElement>(null);
   const hoverTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const lastClickTimeRef = useRef<number>(0);
+  
+  // Для предотвращения случайного рисования при перемещении
+  const dragStartPixelRef = useRef<{x: number, y: number} | null>(null);
+  const dragThreshold = 5; // Минимальное расстояние для начала перемещения
 
   const size = 60;
   const cellSize = 20;
@@ -145,21 +148,34 @@ export default function Home() {
   // Обработчики для перемещения полотна (для всех)
   const handleCanvasMouseDown = (e: React.MouseEvent) => {
     if (e.button === 0) { // ЛКМ
-      // Проверяем, не был ли это быстрый двойной клик (для рисования)
-      const now = Date.now();
-      const timeSinceLastClick = now - lastClickTimeRef.current;
+      // Запоминаем начальную позицию для определения перемещения
+      dragStartPixelRef.current = { x: e.clientX, y: e.clientY };
       
-      // Если это был очень быстрый клик (менее 300мс), возможно это был клик по пикселю
-      if (timeSinceLastClick > 300) {
-        // Это начало перемещения
+      // Для обычных игроков или админа без пробела - начинаем перемещение сразу
+      if (!isAdmin || !isSpaceDown) {
         setIsDragging(true);
         setDragStart({ x: e.clientX - offset.x, y: e.clientY - offset.y });
-        e.preventDefault();
       }
+      
+      e.preventDefault();
     }
   };
 
   const handleCanvasMouseMove = (e: React.MouseEvent) => {
+    if (!isDragging && dragStartPixelRef.current) {
+      // Проверяем, переместились ли мы достаточно для начала перетаскивания
+      const dx = e.clientX - dragStartPixelRef.current.x;
+      const dy = e.clientY - dragStartPixelRef.current.y;
+      const distance = Math.sqrt(dx * dx + dy * dy);
+      
+      // Если переместились больше порога - начинаем перетаскивание
+      if (distance > dragThreshold) {
+        setIsDragging(true);
+        setDragStart({ x: e.clientX - offset.x, y: e.clientY - offset.y });
+        dragStartPixelRef.current = null; // Сбрасываем начальную позицию
+      }
+    }
+    
     if (isDragging) {
       setOffset({
         x: e.clientX - dragStart.x,
@@ -168,10 +184,30 @@ export default function Home() {
     }
   };
 
-  const handleCanvasMouseUp = () => {
-    if (isDragging) {
-      setIsDragging(false);
+  const handleCanvasMouseUp = (e: React.MouseEvent) => {
+    // Если не было перемещения (или было очень малое) и мы не в режиме админа с пробелом
+    // ИЛИ если админ в режиме рисования (пробел зажат)
+    if (!isDragging || (isAdmin && isSpaceDown)) {
+      // Определяем координаты пикселя по позиции клика
+      const rect = canvasRef.current?.getBoundingClientRect();
+      if (rect) {
+        // Учитываем смещение и масштаб
+        const relativeX = (e.clientX - rect.left) / scale;
+        const relativeY = (e.clientY - rect.top) / scale;
+        
+        // Вычисляем координаты пикселя на канвасе
+        const pixelX = Math.floor((relativeX - offset.x) / cellSize);
+        const pixelY = Math.floor((relativeY - offset.y) / cellSize);
+        
+        // Проверяем, что клик был внутри сетки
+        if (pixelX >= 0 && pixelX < size && pixelY >= 0 && pixelY < size) {
+          clickPixel(pixelX, pixelY);
+        }
+      }
     }
+    
+    setIsDragging(false);
+    dragStartPixelRef.current = null;
   };
 
   const handleWheel = (e: React.WheelEvent) => {
@@ -202,21 +238,6 @@ export default function Home() {
     if (hoverTimeoutRef.current) {
       clearTimeout(hoverTimeoutRef.current);
       hoverTimeoutRef.current = null;
-    }
-  };
-
-  // Клик по пикселю (только по клику, не при зажатии)
-  const handlePixelClick = (e: React.MouseEvent, x: number, y: number) => {
-    e.preventDefault();
-    e.stopPropagation();
-    
-    // Записываем время клика для предотвращения случайного рисования при перемещении
-    lastClickTimeRef.current = Date.now();
-    
-    // Для админа - только при зажатом пробеле
-    // Для обычных игроков - всегда при клике
-    if (isAdmin ? isSpaceDown : true) {
-      clickPixel(x, y);
     }
   };
 
@@ -331,11 +352,11 @@ export default function Home() {
         </button>
       </div>
 
-      {/* КУЛДАУН БАР (ТОЛЬКО ДЛЯ ОБЫЧНЫХ ИГРОКОВ) - ПОДНЯТ ВЫШЕ */}
+      {/* КУЛДАУН БАР (ТОЛЬКО ДЛЯ ОБЫЧНЫХ ИГРОКОВ) */}
       {!isAdmin && (
         <div style={{ 
           position: 'fixed', 
-          bottom: '170px', // Поднят выше над палитрой
+          bottom: '170px',
           left: '50%', 
           transform: 'translateX(-50%)',
           width: '300px', 
@@ -364,7 +385,7 @@ export default function Home() {
             fontWeight: 'bold',
             textShadow: '0 1px 2px rgba(0,0,0,0.8)'
           }}>
-            {cooldown === 100 ? '✅ Готов к рисованию' : `⏳ Ожидание: ${cooldown}%`}
+            {cooldown === 100}
           </div>
         </div>
       )}
@@ -372,7 +393,7 @@ export default function Home() {
       {/* ПАЛИТРА ЦВЕТОВ (ФИКСИРОВАННАЯ СНИЗУ) */}
       <div style={{ 
         position: 'fixed', 
-        bottom: '100px', // Поднята немного выше от края
+        bottom: '80px',
         left: '50%', 
         transform: 'translateX(-50%)',
         display: 'flex', 
@@ -437,7 +458,10 @@ export default function Home() {
         onMouseDown={handleCanvasMouseDown}
         onMouseMove={handleCanvasMouseMove}
         onMouseUp={handleCanvasMouseUp}
-        onMouseLeave={handleCanvasMouseUp}
+        onMouseLeave={() => {
+          setIsDragging(false);
+          dragStartPixelRef.current = null;
+        }}
         onWheel={handleWheel}
       >
         {/* СЕТКА ПИКСЕЛЕЙ */}
@@ -448,7 +472,8 @@ export default function Home() {
           backgroundColor: '#333', 
           gap: '1px', 
           border: '2px solid #444',
-          boxShadow: '0 8px 24px rgba(0,0,0,0.8)'
+          boxShadow: '0 8px 24px rgba(0,0,0,0.8)',
+          pointerEvents: 'none' // Убираем события с отдельных пикселей
         }}>
           {Array.from({ length: size * size }).map((_, i) => {
             const x = i % size; 
@@ -458,20 +483,15 @@ export default function Home() {
             return (
               <div 
                 key={i} 
-                onClick={(e) => handlePixelClick(e, x, y)}
                 onMouseEnter={() => { 
-                  // Для админа - рисование при зажатом пробеле и наведении
-                  if (isAdmin && isSpaceDown) {
-                    clickPixel(x, y);
-                  }
                   if (data) handlePixelEnter({ ...data, x, y });
                 }}
                 onMouseLeave={handlePixelLeave}
                 style={{ 
                   width: `${cellSize}px`, 
                   height: `${cellSize}px`, 
-                  backgroundColor: data?.color || '#ffffff', 
-                  cursor: (isAdmin && isSpaceDown) ? 'crosshair' : 'pointer'
+                  backgroundColor: data?.color || '#ffffff',
+                  pointerEvents: 'none' // Убираем события с отдельных пикселей
                 }}
               />
             );
