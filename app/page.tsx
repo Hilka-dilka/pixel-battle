@@ -2,6 +2,12 @@
 import { useEffect, useState, useRef } from 'react';
 import Pusher from 'pusher-js';
 
+interface PlayerStats {
+  nickname: string;
+  pixelsCount: number;
+  isOnline: boolean;
+}
+
 export default function Home() {
   const [pixels, setPixels] = useState<Record<string, any>>({});
   const [selectedColor, setSelectedColor] = useState('#000000');
@@ -15,9 +21,19 @@ export default function Home() {
   const [authError, setAuthError] = useState<string>('');
   
   // Состояние админки
-  const [adminData, setAdminData] = useState<{users: string[], banned: string[]}>({users: [], banned: []});
+  const [adminData, setAdminData] = useState<{
+    users: string[], 
+    banned: string[],
+    userStats: Record<string, number>,
+    onlineUsers: string[]
+  }>({ users: [], banned: [], userStats: {}, onlineUsers: [] });
+  
   const [banInput, setBanInput] = useState('');
   const isAdmin = auth.nick.toLowerCase() === 'admin';
+
+  // Онлайн игроки и статистика
+  const [playerStats, setPlayerStats] = useState<PlayerStats[]>([]);
+  const [onlineCount, setOnlineCount] = useState(0);
 
   // Состояние для перемещения и зума
   const [offset, setOffset] = useState({ x: 0, y: 0 });
@@ -27,6 +43,7 @@ export default function Home() {
   const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
   const canvasRef = useRef<HTMLDivElement>(null);
   const hoverTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const statsRefreshRef = useRef<NodeJS.Timeout | null>(null);
   
   // Для предотвращения случайного рисования при перемещении
   const dragStartPosRef = useRef<{x: number, y: number} | null>(null);
@@ -39,21 +56,30 @@ export default function Home() {
     const savedNick = localStorage.getItem('p_nick');
     const savedPass = localStorage.getItem('p_pass');
     if (savedNick && savedPass) { 
-      // Проверяем сохраненные данные при загрузке
+      setAuth({ nick: savedNick, pass: savedPass });
       checkAuth(savedNick, savedPass);
     }
 
     // Загрузка полотна
-    fetch('/api/pixels').then(res => res.json()).then(data => {
-      const parsed: any = {};
-      for (const k in data) {
-        try { parsed[k] = typeof data[k] === 'string' ? JSON.parse(data[k]) : data[k]; } 
-        catch(e) { parsed[k] = { color: data[k], user: '???' }; }
-      }
-      setPixels(parsed);
-    });
+    fetch('/api/pixels')
+      .then(res => {
+        if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+        return res.json();
+      })
+      .then(data => {
+        const parsed: any = {};
+        for (const k in data) {
+          try { 
+            parsed[k] = typeof data[k] === 'string' ? JSON.parse(data[k]) : data[k]; 
+          } catch(e) { 
+            parsed[k] = { color: data[k], user: '???' }; 
+          }
+        }
+        setPixels(parsed);
+      })
+      .catch(err => console.error('Failed to load pixels:', err));
 
-    // Pusher (ключ вписан вручную)
+    // Pusher
     const pusher = new Pusher("428b10fa704e1012072a", { cluster: "eu" });
     const channel = pusher.subscribe('pixel-channel');
     
@@ -63,7 +89,7 @@ export default function Home() {
 
     channel.bind('clear', () => setPixels({}));
 
-    // Обработчики для зажатия ПРОБЕЛА (только админ)
+    // Обработчики для зажатия ПРОБЕЛА
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.code === 'Space' && isAdmin) {
         e.preventDefault();
@@ -96,6 +122,7 @@ export default function Home() {
 
     window.addEventListener('wheel', handleWheelGlobal, { passive: false });
 
+    // Очистка при размонтировании
     return () => { 
       pusher.unsubscribe('pixel-channel'); 
       window.removeEventListener('keydown', handleKeyDown);
@@ -103,35 +130,106 @@ export default function Home() {
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('wheel', handleWheelGlobal);
       
-      if (hoverTimeoutRef.current) {
-        clearTimeout(hoverTimeoutRef.current);
-      }
+      if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
+      if (statsRefreshRef.current) clearInterval(statsRefreshRef.current);
     };
   }, [isAdmin]);
 
-  // Проверка авторизации
-  const checkAuth = async (nickname: string, password: string) => {
+  // Загрузка статистики игроков
+  const loadPlayerStats = async () => {
     try {
       const res = await fetch('/api/pixels', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ nickname, password, action: 'auth_check' }),
+        body: JSON.stringify({ 
+          nickname: auth.nick, 
+          password: auth.pass, 
+          action: 'get_users' 
+        }),
       });
       
-      const data = await res.json();
       if (res.ok) {
-        setAuth({ nick: nickname, pass: password });
+        const data = await res.json();
+        if (data.userStats && data.onlineUsers) {
+          setAdminData(data);
+          
+          // Формируем статистику игроков
+          const stats: PlayerStats[] = [];
+          const allUsers = new Set([
+            ...data.users,
+            ...Object.keys(data.userStats),
+            ...data.onlineUsers
+          ]);
+          
+          allUsers.forEach(user => {
+            if (user && user !== 'admin') {
+              stats.push({
+                nickname: user,
+                pixelsCount: data.userStats[user] || 0,
+                isOnline: data.onlineUsers.includes(user)
+              });
+            }
+          });
+          
+          // Сортируем по количеству пикселей (по убыванию)
+          stats.sort((a, b) => b.pixelsCount - a.pixelsCount);
+          setPlayerStats(stats);
+          setOnlineCount(data.onlineUsers.length);
+        }
+      }
+    } catch (error) {
+      console.error('Failed to load player stats:', error);
+    }
+  };
+
+  // Автоматическое обновление статистики
+  useEffect(() => {
+    if (isAuthOk) {
+      // Загружаем сразу
+      loadPlayerStats();
+      
+      // Затем каждые 30 секунд
+      statsRefreshRef.current = setInterval(loadPlayerStats, 30000);
+      
+      return () => {
+        if (statsRefreshRef.current) clearInterval(statsRefreshRef.current);
+      };
+    }
+  }, [isAuthOk, auth]);
+
+  // Проверка авторизации
+  const checkAuth = async (nickname: string, password: string) => {
+    setAuthError('');
+    try {
+      const res = await fetch('/api/pixels', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nickname, password }),
+      });
+      
+      const contentType = res.headers.get("content-type");
+      if (!contentType || !contentType.includes("application/json")) {
+        throw new Error("Server returned non-JSON response");
+      }
+      
+      const data = await res.json();
+      
+      if (res.ok) {
         setIsAuthOk(true);
         setAuthError('');
         localStorage.setItem('p_nick', nickname);
         localStorage.setItem('p_pass', password);
+        
+        // Загружаем статистику после успешной авторизации
+        setTimeout(() => loadPlayerStats(), 1000);
       } else {
-        setAuthError(data.error || 'Auth failed');
+        setAuthError(data.error || 'Authentication failed');
         localStorage.removeItem('p_nick');
         localStorage.removeItem('p_pass');
       }
     } catch (error) {
-      setAuthError('Network error');
+      console.error('Auth error:', error);
+      setAuthError('Network error. Check if server is running.');
     }
   };
 
@@ -157,44 +255,72 @@ export default function Home() {
     const userId = localStorage.getItem('p_id') || ('gen_'+auth.nick);
     if (!localStorage.getItem('p_id')) localStorage.setItem('p_id', userId);
 
-    const res = await fetch('/api/pixels', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ x, y, color: selectedColor, nickname: auth.nick, password: auth.pass, userId }),
-    });
-    
-    if (!res.ok) {
-      const data = await res.json();
-      if (data.error === 'Invalid password' || data.error === 'Auth') {
-        setAuthError('Session expired. Please login again.');
-        setIsAuthOk(false);
-        localStorage.clear();
+    try {
+      const res = await fetch('/api/pixels', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          x, 
+          y, 
+          color: selectedColor, 
+          nickname: auth.nick, 
+          password: auth.pass, 
+          userId 
+        }),
+      });
+      
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        if (data.error === 'Invalid password' || data.error === 'Auth') {
+          setAuthError('Session expired. Please login again.');
+          setIsAuthOk(false);
+          localStorage.clear();
+        }
+      } else {
+        // Обновляем статистику после успешной установки пикселя
+        setTimeout(() => loadPlayerStats(), 500);
       }
+    } catch (error) {
+      console.error('Pixel click error:', error);
     }
   };
 
   const adminAction = async (action: string, target?: string) => {
-    const res = await fetch('/api/pixels', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ nickname: auth.nick, password: auth.pass, action, targetId: target || banInput }),
-    });
-    const data = await res.json();
-    if (res.ok) {
-      if (action === 'get_users') setAdminData(data);
-      if (action === 'ban') alert('Пользователь забанен!');
-    } else {
-      if (data.error === 'Invalid admin password') {
-        setAuthError('Invalid admin password');
-        setIsAuthOk(false);
-        localStorage.clear();
+    try {
+      const res = await fetch('/api/pixels', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          nickname: auth.nick, 
+          password: auth.pass, 
+          action, 
+          targetId: target || banInput 
+        }),
+      });
+      
+      const data = await res.json();
+      if (res.ok) {
+        if (action === 'get_users') {
+          setAdminData(data);
+          alert('Статистика обновлена!');
+        }
+        if (action === 'ban') alert('Пользователь забанен!');
+      } else {
+        if (data.error === 'Invalid admin password') {
+          setAuthError('Invalid admin password');
+          setIsAuthOk(false);
+          localStorage.clear();
+        }
       }
+    } catch (error) {
+      console.error('Admin action error:', error);
+      alert('Error performing admin action');
     }
   };
 
-  // Обработчики для перемещения полотна (для всех)
+  // Обработчики для перемещения полотна
   const handleCanvasMouseDown = (e: React.MouseEvent) => {
-    if (e.button === 0) { // ЛКМ
+    if (e.button === 0) {
       dragStartPosRef.current = { x: e.clientX, y: e.clientY };
       isClickActionRef.current = true;
       e.preventDefault();
@@ -246,7 +372,7 @@ export default function Home() {
     
     hoverTimeoutRef.current = setTimeout(() => {
       setShowHoveredInfo(true);
-    }, 500);
+    }, 500); // 0.5 секунды задержки
   };
 
   const handlePixelLeave = () => {
@@ -278,7 +404,6 @@ export default function Home() {
   // Авторизация
   const handleAuthSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setAuthError('');
     await checkAuth(auth.nick, auth.pass);
   };
 
@@ -344,9 +469,9 @@ export default function Home() {
           <div style={{ fontSize: '10px', color: '#ccc', marginBottom: '10px', padding: '5px', background: '#222', borderRadius: '3px' }}>
             <div>ЗАЖАТИЕ: {isSpaceDown ? '✔️ ПРОБЕЛ' : '❌ ПРОБЕЛ'}</div>
           </div>
-          <button onClick={() => adminAction('get_users')} style={{ width: '100%', marginBottom: '10px' }}>Список игроков</button>
+          <button onClick={() => adminAction('get_users')} style={{ width: '100%', marginBottom: '10px' }}>Обновить статистику</button>
           <div style={{ maxHeight: '80px', overflowY: 'auto', marginBottom: '10px', background: '#000', padding: '5px' }}>
-            <b>Юзеры:</b> {adminData.users?.join(', ')}
+            <b>Все юзеры:</b> {adminData.users?.join(', ')}
           </div>
           <div style={{ maxHeight: '80px', overflowY: 'auto', marginBottom: '10px', background: '#000', padding: '5px', border: '1px solid red' }}>
             <b style={{ color: '#ff6666' }}>Забаненные ID:</b> {adminData.banned?.join(', ') || 'нет'}
@@ -356,6 +481,151 @@ export default function Home() {
           <button onClick={() => { if(confirm('Очистить поле?')) adminAction('clear_all') }} style={{ width: '100%', backgroundColor: '#444', color: '#fff' }}>ОЧИСТИТЬ ПОЛЕ</button>
         </div>
       )}
+
+      {/* ПАНЕЛЬ СТАТИСТИКИ ИГРОКОВ */}
+      <div style={{ 
+        position: 'fixed', 
+        top: 10, 
+        right: 10, 
+        zIndex: 2000,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '15px',
+        width: '280px'
+      }}>
+        {/* ИНФОРМАЦИЯ О ТЕКУЩЕМ ПОЛЬЗОВАТЕЛЕ */}
+        <div style={{ 
+          background: 'rgba(30, 30, 30, 0.95)',
+          padding: '12px',
+          borderRadius: '8px',
+          border: '1px solid #444',
+          boxShadow: '0 4px 12px rgba(0,0,0,0.5)'
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+            <span style={{ 
+              fontSize: '14px',
+              color: '#4CAF50',
+              fontWeight: 'bold'
+            }}>
+              {auth.nick} {isAdmin && '👑'}
+            </span>
+            <button 
+              onClick={() => {localStorage.clear(); location.reload();}} 
+              style={{
+                fontSize: '11px', 
+                padding: '4px 8px',
+                backgroundColor: '#333',
+                border: '1px solid #555',
+                borderRadius: '4px',
+                color: '#fff',
+                cursor: 'pointer'
+              }}
+            >
+              Выход
+            </button>
+          </div>
+          
+          {/* СТАТИСТИКА ОНЛАЙН */}
+          <div style={{ 
+            fontSize: '11px', 
+            color: '#aaa',
+            padding: '6px',
+            background: '#222',
+            borderRadius: '4px',
+            marginBottom: '8px',
+            textAlign: 'center'
+          }}>
+            <span style={{ color: '#4CAF50' }}>🟢 Онлайн: {onlineCount} игроков</span>
+          </div>
+          
+          {/* СПИСОК ИГРОКОВ */}
+          <div style={{ 
+            maxHeight: '300px',
+            overflowY: 'auto',
+            fontSize: '11px'
+          }}>
+            <div style={{ 
+              display: 'flex', 
+              justifyContent: 'space-between',
+              padding: '4px 6px',
+              background: '#333',
+              borderRadius: '3px',
+              marginBottom: '5px',
+              fontWeight: 'bold',
+              color: '#4CAF50'
+            }}>
+              <span>Игрок</span>
+              <span>Пиксели</span>
+              <span>Статус</span>
+            </div>
+            
+            {playerStats.length > 0 ? (
+              playerStats.map((player, index) => (
+                <div 
+                  key={index}
+                  style={{ 
+                    display: 'flex', 
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    padding: '6px 8px',
+                    background: index % 2 === 0 ? '#222' : '#1a1a1a',
+                    borderRadius: '3px',
+                    marginBottom: '3px',
+                    borderLeft: `3px solid ${player.isOnline ? '#4CAF50' : '#666'}`
+                  }}
+                >
+                  <span style={{ 
+                    color: player.nickname === auth.nick ? '#4CAF50' : '#fff',
+                    fontWeight: player.nickname === auth.nick ? 'bold' : 'normal'
+                  }}>
+                    {player.nickname === auth.nick ? '👉 ' : ''}
+                    {player.nickname}
+                  </span>
+                  <span style={{ 
+                    color: player.pixelsCount > 0 ? '#FF9800' : '#aaa',
+                    fontWeight: 'bold'
+                  }}>
+                    {player.pixelsCount}
+                  </span>
+                  <span style={{ 
+                    color: player.isOnline ? '#4CAF50' : '#666',
+                    fontSize: '10px'
+                  }}>
+                    {player.isOnline ? '🟢 онлайн' : '⚫ офлайн'}
+                  </span>
+                </div>
+              ))
+            ) : (
+              <div style={{ 
+                padding: '10px', 
+                textAlign: 'center', 
+                color: '#666', 
+                fontSize: '10px'
+              }}>
+                Нет данных об игроках
+              </div>
+            )}
+          </div>
+          
+          {/* КНОПКА ОБНОВЛЕНИЯ */}
+          <button 
+            onClick={loadPlayerStats}
+            style={{
+              width: '100%',
+              fontSize: '10px',
+              padding: '6px',
+              backgroundColor: '#333',
+              border: '1px solid #444',
+              borderRadius: '4px',
+              color: '#fff',
+              cursor: 'pointer',
+              marginTop: '8px'
+            }}
+          >
+            🔄 Обновить статистику
+          </button>
+        </div>
+      </div>
 
       {/* ЗАГОЛОВОК */}
       <div style={{ 
@@ -377,37 +647,6 @@ export default function Home() {
         }}>
           PIXEL BATTLE LIVE
         </h1>
-      </div>
-
-      {/* КНОПКА ВЫХОДА */}
-      <div style={{ 
-        position: 'fixed', 
-        top: 10, 
-        right: 10, 
-        zIndex: 2000,
-        display: 'flex',
-        alignItems: 'center',
-        gap: '10px'
-      }}>
-        <span style={{ 
-          fontSize: '14px',
-          color: '#4CAF50',
-          fontWeight: 'bold'
-        }}>{auth.nick}</span>
-        <button 
-          onClick={() => {localStorage.clear(); location.reload();}} 
-          style={{
-            fontSize: '11px', 
-            padding: '5px 10px',
-            backgroundColor: '#333',
-            border: '1px solid #555',
-            borderRadius: '4px',
-            color: '#fff',
-            cursor: 'pointer'
-          }}
-        >
-          Выход
-        </button>
       </div>
 
       {/* КУЛДАУН БАР */}
@@ -443,7 +682,7 @@ export default function Home() {
             fontWeight: 'bold',
             textShadow: '0 1px 2px rgba(0,0,0,0.8)'
           }}>
-            {cooldown === 100 ? '✅ Готов к рисованию' : `⏳ Ожидание: ${cooldown}%`}
+            {cooldown === 100}
           </div>
         </div>
       )}
@@ -451,7 +690,7 @@ export default function Home() {
       {/* ПАЛИТРА ЦВЕТОВ */}
       <div style={{ 
         position: 'fixed', 
-        bottom: '100px',
+        bottom: '80px',
         left: '50%', 
         transform: 'translateX(-50%)',
         display: 'flex', 
@@ -639,27 +878,7 @@ export default function Home() {
         </div>
       </div>
 
-      {/* ИНСТРУКЦИЯ */}
-      <div style={{ 
-        position: 'fixed', 
-        bottom: 10, 
-        right: 10, 
-        background: 'rgba(0,0,0,0.8)', 
-        padding: '10px 12px', 
-        borderRadius: '6px',
-        fontSize: '12px',
-        border: '1px solid #444',
-        maxWidth: '250px',
-        zIndex: 2000,
-        boxShadow: '0 3px 10px rgba(0,0,0,0.5)'
-      }}>
-        <div style={{ color: '#4CAF50', marginBottom: '4px', fontWeight: 'bold' }}>Управление:</div>
-        <div>• Перемещение: зажать ЛКМ и тянуть</div>
-        <div>• Зум: колёсико мыши</div>
-        <div>• Рисование: клик по пикселю</div>
-        {isAdmin && <div>• Режим рисования админа: ПРОБЕЛ</div>}
-        <div>• Информация: навести (2 сек)</div>
-      </div>
+      
 
       <style jsx global>{`
         @keyframes fadeIn {
@@ -673,6 +892,25 @@ export default function Home() {
           overflow: hidden;
           width: 100%;
           height: 100%;
+        }
+        
+        /* Стили для скроллбара */
+        ::-webkit-scrollbar {
+          width: 6px;
+        }
+        
+        ::-webkit-scrollbar-track {
+          background: #222;
+          border-radius: 3px;
+        }
+        
+        ::-webkit-scrollbar-thumb {
+          background: #444;
+          border-radius: 3px;
+        }
+        
+        ::-webkit-scrollbar-thumb:hover {
+          background: #555;
         }
       `}</style>
     </div>
