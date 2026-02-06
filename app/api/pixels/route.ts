@@ -13,9 +13,6 @@ const pusher = new Pusher({
   useTLS: true,
 });
 
-// СПИСОК АДМИНОВ - добавь сюда ники всех админов
-const ADMIN_USERS = ['Admin', 'Bot', 'pixeloler']; // ← Добавь нужные ники
-
 export async function GET() {
   try {
     const pixels = await redis.hgetall('board');
@@ -48,24 +45,23 @@ export async function POST(req: Request) {
       }
     } else {
       // Регистрация нового пользователя
-      // Проверяем, не пытается ли создать администратора из списка
-      if (ADMIN_USERS.includes(nickname.toLowerCase())) {
-        return NextResponse.json({ error: 'Cannot create admin account. Contact existing admin.' }, { status: 403 });
+      // Проверяем, не пытается ли создать администратора
+      if (nickname.toLowerCase() === 'admin') {
+        return NextResponse.json({ error: 'Cannot create admin account' }, { status: 403 });
       }
       
       await redis.set(authKey, password);
       await redis.sadd('all_users', nickname);
     }
 
-    // Проверяем, является ли пользователь админом (по списку)
-    const isAdmin = ADMIN_USERS.includes(nickname.toLowerCase());
+    const isAdmin = nickname.toLowerCase() === 'admin';
 
     // АДМИН-ЛОГИКА
     if (isAdmin) {
-      // Проверяем пароль админа
-      const adminPassword = await redis.get(authKey) as string | null;
+      // Проверяем специальный пароль админа
+      const adminPassword = await redis.get('auth:admin') as string | null;
       
-      if (!adminPassword || adminPassword !== password) {
+      if (adminPassword !== password) {
         return NextResponse.json({ error: 'Invalid admin password' }, { status: 401 });
       }
       
@@ -106,23 +102,7 @@ export async function POST(req: Request) {
           users, 
           banned, 
           userStats,
-          onlineUsers,
-          adminUsers: ADMIN_USERS // Отправляем список админов на фронтенд
-        });
-      }
-      if (action === 'add_admin') {
-        // Только существующие админы могут добавлять новых админов
-        const newAdminNickname = targetId;
-        if (!newAdminNickname) {
-          return NextResponse.json({ error: 'No nickname provided' }, { status: 400 });
-        }
-        
-        // Добавляем в список админов (в реальном коде это нужно сохранять в Redis)
-        // Для простоты мы просто вернем инструкцию
-        return NextResponse.json({ 
-          ok: true, 
-          message: `To add ${newAdminNickname} as admin, add their nickname to ADMIN_USERS array in route.ts`,
-          instruction: `Add '${newAdminNickname.toLowerCase()}' to ADMIN_USERS array and redeploy`
+          onlineUsers
         });
       }
     }
