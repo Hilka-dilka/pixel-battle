@@ -1,4 +1,3 @@
-
 import { Redis } from '@upstash/redis';
 import { NextResponse } from 'next/server';
 import Pusher from 'pusher';
@@ -35,7 +34,7 @@ export async function POST(req: Request) {
     }
 
     const authKey = `auth:${nickname.toLowerCase()}`;
-    const savedPassword = await redis.get(authKey);
+    const savedPassword = await redis.get(authKey) as string | null;
     
     // Если пользователь существует
     if (savedPassword) {
@@ -59,7 +58,7 @@ export async function POST(req: Request) {
     // АДМИН-ЛОГИКА
     if (isAdmin) {
       // Проверяем специальный пароль админа
-      const adminPassword = await redis.get('auth:admin');
+      const adminPassword = await redis.get('auth:admin') as string | null;
       
       if (adminPassword !== password) {
         return NextResponse.json({ error: 'Invalid admin password' }, { status: 401 });
@@ -109,14 +108,14 @@ export async function POST(req: Request) {
 
     // Обновляем статус онлайн при каждом запросе
     const onlineKey = `online:${nickname}`;
-    await redis.set(onlineKey, Date.now(), { ex: 60 }); // Онлайн на 60 секунд
+    await redis.set(onlineKey, Date.now().toString(), { ex: 60 }); // Онлайн на 60 секунд
     await redis.sadd('online_users', nickname);
 
     // Очищаем старых онлайн пользователей
     const allOnline = await redis.smembers('online_users');
     for (const user of allOnline) {
       const userOnlineKey = `online:${user}`;
-      const lastSeen = await redis.get(userOnlineKey);
+      const lastSeen = await redis.get(userOnlineKey) as string | null;
       if (!lastSeen || Date.now() - parseInt(lastSeen) > 60000) {
         await redis.srem('online_users', user);
       }
