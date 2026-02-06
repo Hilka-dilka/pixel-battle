@@ -142,10 +142,11 @@ export default function Home() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
-          nickname: auth.nick, 
-          password: auth.pass, 
-          action: 'get_users' 
-        }),
+  nickname: auth.nick, 
+  password: auth.pass,
+  action: isAdmin ? 'get_users' : 'get_stats'  // ← вот эта строка
+}),
+
       });
       
       if (res.ok) {

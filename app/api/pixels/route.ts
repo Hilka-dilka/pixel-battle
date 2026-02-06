@@ -1,3 +1,4 @@
+
 import { Redis } from '@upstash/redis';
 import { NextResponse } from 'next/server';
 import Pusher from 'pusher';
@@ -106,6 +107,34 @@ export async function POST(req: Request) {
       }
     }
 
+    // ЛОГИКА ДЛЯ ВСЕХ ПОЛЬЗОВАТЕЛЕЙ (включая получение статистики)
+    if (action === 'get_stats') {
+      // Получаем онлайн пользователей
+      const onlineUsers = await redis.smembers('online_users');
+      
+      // Получаем статистику пикселей для каждого пользователя
+      const pixels = await redis.hgetall('board');
+      const userStats: Record<string, number> = {};
+      
+      if (pixels) {
+        Object.values(pixels).forEach((pixel: any) => {
+          try {
+            const pixelData = typeof pixel === 'string' ? JSON.parse(pixel) : pixel;
+            if (pixelData.user) {
+              userStats[pixelData.user] = (userStats[pixelData.user] || 0) + 1;
+            }
+          } catch (e) {
+            // Игнорируем ошибки парсинга
+          }
+        });
+      }
+      
+      return NextResponse.json({ 
+        userStats,
+        onlineUsers
+      });
+    }
+
     // Обновляем статус онлайн при каждом запросе
     const onlineKey = `online:${nickname}`;
     await redis.set(onlineKey, Date.now().toString(), { ex: 60 }); // Онлайн на 60 секунд
@@ -121,7 +150,7 @@ export async function POST(req: Request) {
       }
     }
 
-    // ЛОГИКА ОБЫЧНОГО ИГРОКА
+    // ЛОГИКА ОБЫЧНОГО ИГРОКА (баны)
     if (userId) {
       const isBanned = await redis.sismember('banned_users', userId);
       if (isBanned) return NextResponse.json({ error: 'Banned' }, { status: 403 });
