@@ -17,9 +17,8 @@ export default function Home() {
   const [banInput, setBanInput] = useState('');
   const isAdmin = auth.nick.toLowerCase() === 'admin';
 
-  // Увеличенное полотно до 60x60
-  const size = 60;
-  const cellSize = 15; // Немного уменьшил размер ячейки для лучшего отображения
+  const size = 60; // Изменено с 30 на 60
+  const cellSize = 20;
 
   useEffect(() => {
     const savedNick = localStorage.getItem('p_nick');
@@ -88,11 +87,7 @@ export default function Home() {
     });
     const data = await res.json();
     if (action === 'get_users') setAdminData(data);
-    if (action === 'ban') {
-      alert('Пользователь забанен!');
-      // Обновляем список забаненных после бана
-      adminAction('get_users');
-    }
+    if (action === 'ban') alert('Пользователь забанен!');
   };
 
   if (!isAuthOk) {
@@ -114,65 +109,27 @@ export default function Home() {
       
       {/* ПАНЕЛЬ АДМИНА */}
       {isAdmin && (
-        <div style={{ position: 'fixed', left: 10, top: 10, width: '250px', background: '#1e1e1e', padding: '15px', borderRadius: '10px', border: '2px solid gold', fontSize: '11px', zIndex: 1000, maxHeight: '90vh', overflowY: 'auto' }}>
+        <div style={{ position: 'fixed', left: 10, top: 10, width: '220px', background: '#1e1e1e', padding: '15px', borderRadius: '10px', border: '2px solid gold', fontSize: '11px', zIndex: 1000 }}>
           <h4 style={{ color: 'gold', margin: '0 0 10px 0' }}>ADMIN PANEL</h4>
-          
-          <button onClick={() => adminAction('get_users')} style={{ width: '100%', marginBottom: '10px' }}>Обновить списки</button>
-          
-          <div style={{ marginBottom: '10px', background: '#000', padding: '5px', borderRadius: '3px' }}>
-            <b style={{color: '#4CAF50'}}>Игроки:</b>
-            <div style={{ maxHeight: '100px', overflowY: 'auto', marginTop: '5px' }}>
-              {adminData.users?.map((user, i) => (
-                <div key={i} style={{padding: '2px 0', fontSize: '10px'}}>{user}</div>
-              ))}
-            </div>
+          <button onClick={() => adminAction('get_users')} style={{ width: '100%', marginBottom: '10px' }}>Список игроков</button>
+          <div style={{ maxHeight: '80px', overflowY: 'auto', marginBottom: '10px', background: '#000', padding: '5px' }}>
+            <b>Юзеры:</b> {adminData.users?.join(', ')}
           </div>
-          
-          <div style={{ marginBottom: '10px', background: '#000', padding: '5px', borderRadius: '3px' }}>
-            <b style={{color: 'red'}}>Забаненные (ID):</b>
-            <div style={{ maxHeight: '100px', overflowY: 'auto', marginTop: '5px' }}>
-              {adminData.banned?.map((id, i) => (
-                <div key={i} style={{padding: '2px 0', fontSize: '10px', color: '#ff6666'}}>{id}</div>
-              ))}
-            </div>
+          <div style={{ maxHeight: '80px', overflowY: 'auto', marginBottom: '10px', background: '#000', padding: '5px', border: '1px solid red' }}>
+            <b style={{ color: '#ff6666' }}>Забаненные ID:</b> {adminData.banned?.join(', ') || 'нет'}
           </div>
-          
-          <input 
-            placeholder="ID для бана (gen_ник)" 
-            value={banInput} 
-            onChange={e => setBanInput(e.target.value)} 
-            style={{ width: '100%', marginBottom: '5px', background: '#000', color: '#fff', border: '1px solid #444', padding: '5px' }} 
-          />
-          <button 
-            onClick={() => adminAction('ban')} 
-            style={{ width: '100%', backgroundColor: 'red', color: '#fff', marginBottom: '10px', border: 'none', padding: '8px', borderRadius: '3px', cursor: 'pointer' }}
-          >
-            ЗАБАНИТЬ ПО ID
-          </button>
-          
-          <button 
-            onClick={() => { if(confirm('Очистить поле?')) adminAction('clear_all') }} 
-            style={{ width: '100%', backgroundColor: '#444', color: '#fff', border: 'none', padding: '8px', borderRadius: '3px', marginBottom: '10px', cursor: 'pointer' }}
-          >
-            ОЧИСТИТЬ ПОЛЕ
-          </button>
-          
-          <input 
-            type="text" 
-            placeholder="Цвет HEX: #ff00ff" 
-            onChange={e => setSelectedColor(e.target.value)} 
-            value={selectedColor}
-            style={{ width: '100%', background: '#000', color: '#fff', border: '1px solid #444', padding: '5px', borderRadius: '3px' }} 
-          />
+          <input placeholder="ID для бана" value={banInput} onChange={e => setBanInput(e.target.value)} style={{ width: '100%', marginBottom: '5px' }} />
+          <button onClick={() => adminAction('ban')} style={{ width: '100%', backgroundColor: 'red', color: '#fff', marginBottom: '10px' }}>ЗАБАНИТЬ ПО ID</button>
+          <button onClick={() => { if(confirm('Очистить поле?')) adminAction('clear_all') }} style={{ width: '100%', backgroundColor: '#444', color: '#fff' }}>ОЧИСТИТЬ ПОЛЕ</button>
+          <input type="text" placeholder="Цвет HEX: #ff00ff" onChange={e => setSelectedColor(e.target.value)} style={{ width: '100%', marginTop: '10px', background: '#000', color: '#fff' }} />
         </div>
       )}
 
-      <div style={{ position: 'fixed', top: 10, right: 10, zIndex: 1000 }}>
-        <span style={{marginRight: '10px'}}>{auth.nick}</span>
-        <button onClick={() => {localStorage.clear(); location.reload();}} style={{fontSize:'10px', padding: '5px 10px'}}>Выход</button>
+      <div style={{ position: 'fixed', top: 10, right: 10 }}>
+        {auth.nick} <button onClick={() => {localStorage.clear(); location.reload();}} style={{fontSize:'10px'}}>Выход</button>
       </div>
 
-      <h1 style={{ letterSpacing: '3px', marginTop: '20px' }}>PIXEL BATTLE LIVE (60x60)</h1>
+      <h1 style={{ letterSpacing: '3px' }}>PIXEL BATTLE LIVE</h1>
 
       {!isAdmin && (
         <div style={{ width: '300px', height: '6px', backgroundColor: '#333', marginBottom: '20px', borderRadius: '3px', overflow: 'hidden' }}>
@@ -180,38 +137,15 @@ export default function Home() {
         </div>
       )}
 
-      <div style={{ display: 'flex', gap: '8px', marginBottom: '20px', flexWrap: 'wrap', justifyContent: 'center' }}>
-        {['#000000', '#808080', '#ffffff', '#ff0000', '#00ff00', '#0000ff', '#ffff00', '#ff00ff', '#00ffff'].map(c => (
-          <div 
-            key={c} 
-            onClick={() => setSelectedColor(c)} 
-            style={{ 
-              width: '30px', 
-              height: '30px', 
-              backgroundColor: c, 
-              border: selectedColor === c ? '3px solid gold' : '1px solid #333', 
-              cursor: 'pointer', 
-              borderRadius: '5px' 
-            }} 
-          />
+      <div style={{ display: 'flex', gap: '8px', marginBottom: '20px' }}>
+        {['#000000', '#808080', '#ffffff', '#ff0000'].map(c => (
+          <div key={c} onClick={() => setSelectedColor(c)} style={{ width: '35px', height: '35px', backgroundColor: c, border: selectedColor === c ? '3px solid gold' : '1px solid #333', cursor: 'pointer', borderRadius: '5px' }} />
         ))}
       </div>
 
-      <div style={{ 
-        position: 'relative', 
-        display: 'grid', 
-        gridTemplateColumns: `repeat(${size}, ${cellSize}px)`, 
-        gridTemplateRows: `repeat(${size}, ${cellSize}px)`, 
-        backgroundColor: '#333', 
-        gap: '1px', 
-        border: '2px solid #444',
-        marginBottom: '50px',
-        overflow: 'auto',
-        maxWidth: '100%'
-      }}>
+      <div style={{ position: 'relative', display: 'grid', gridTemplateColumns: `repeat(${size}, ${cellSize}px)`, gridTemplateRows: `repeat(${size}, ${cellSize}px)`, backgroundColor: '#333', gap: '1px', border: '2px solid #444' }}>
         {Array.from({ length: size * size }).map((_, i) => {
-          const x = i % size; 
-          const y = Math.floor(i / size);
+          const x = i % size; const y = Math.floor(i / size);
           const data = pixels[`${x}-${y}`];
 
           return (
@@ -223,13 +157,7 @@ export default function Home() {
                 if (data) setHoveredInfo({ ...data, x, y });
               }}
               onMouseLeave={() => setHoveredInfo(null)}
-              style={{ 
-                width: `${cellSize}px`, 
-                height: `${cellSize}px`, 
-                backgroundColor: data?.color || '#ffffff', 
-                cursor: 'crosshair',
-                transition: 'background-color 0.2s'
-              }}
+              style={{ width: `${cellSize}px`, height: `${cellSize}px`, backgroundColor: data?.color || '#ffffff', cursor: 'crosshair' }}
             />
           );
         })}
@@ -237,25 +165,14 @@ export default function Home() {
         {/* TOOLTIP (ИНФОРМАЦИЯ ПРИ НАВЕДЕНИИ) */}
         {hoveredInfo && (
           <div style={{ 
-            position: 'absolute', 
-            top: -85, 
-            left: '50%', 
-            transform: 'translateX(-50%)', 
-            backgroundColor: '#222', 
-            padding: '10px', 
-            borderRadius: '5px', 
-            fontSize: '11px', 
-            border: '1px solid gold', 
-            zIndex: 100, 
-            pointerEvents: 'none', 
-            textAlign: 'center', 
-            boxShadow: '0 5px 15px rgba(0,0,0,0.5)',
-            minWidth: '150px'
+            position: 'absolute', top: -85, left: '50%', transform: 'translateX(-50%)', 
+            backgroundColor: '#222', padding: '10px', borderRadius: '5px', 
+            fontSize: '11px', border: '1px solid gold', zIndex: 100, 
+            pointerEvents: 'none', textAlign: 'center', boxShadow: '0 5px 15px rgba(0,0,0,0.5)' 
           }}>
-            <div><span style={{color: 'gold'}}>Координаты:</span> {hoveredInfo.x}, {hoveredInfo.y}</div>
-            <div><span style={{color: 'gold'}}>Автор:</span> {String(hoveredInfo.user)}</div>
-            <div><span style={{color: 'gold'}}>ID:</span> {String(hoveredInfo.userId || 'n/a')}</div>
-            <div><span style={{color: 'gold'}}>Цвет:</span> {String(hoveredInfo.color)}</div>
+            <span style={{color: 'gold'}}>Автор:</span> {String(hoveredInfo.user)} <br/>
+            <span style={{color: 'gold'}}>ID:</span> {String(hoveredInfo.userId || 'n/a')} <br/>
+            <span style={{color: 'gold'}}>Цвет:</span> {String(hoveredInfo.color)}
           </div>
         )}
       </div>
