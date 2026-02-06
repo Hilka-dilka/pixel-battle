@@ -5,10 +5,8 @@ import Pusher from 'pusher-js';
 export default function Home() {
   const [pixels, setPixels] = useState<Record<string, any>>({});
   const [selectedColor, setSelectedColor] = useState('#000000');
-  const [step, setStep] = useState<'email' | 'otp' | 'login' | 'game'>('email');
-  const [email, setEmail] = useState('');
-  const [otp, setOtp] = useState('');
   const [auth, setAuth] = useState({ nick: '', pass: '' });
+  const [isAuthOk, setIsAuthOk] = useState(false);
   const [cooldown, setCooldown] = useState(100);
   const [canClick, setCanClick] = useState(true);
   const [hoveredInfo, setHoveredInfo] = useState<any>(null);
@@ -23,7 +21,7 @@ export default function Home() {
   useEffect(() => {
     const savedNick = localStorage.getItem('p_nick');
     const savedPass = localStorage.getItem('p_pass');
-    if (savedNick && savedPass) { setAuth({ nick: savedNick, pass: savedPass }); setStep('game'); }
+    if (savedNick && savedPass) { setAuth({ nick: savedNick, pass: savedPass }); setIsAuthOk(true); }
 
     fetch('/api/pixels').then(res => res.json()).then(data => {
       const parsed: any = {};
@@ -36,7 +34,7 @@ export default function Home() {
 
     const pusher = new Pusher("428b10fa704e1012072a", { cluster: "eu" });
     const channel = pusher.subscribe('pixel-channel');
-    channel.bind('new-pixel', (up: any) => setPixels(prev => ({ ...prev, [up.key]: up.data })));
+    channel.bind('new-pixel', (u: any) => setPixels(prev => ({ ...prev, [u.key]: u.data })));
     channel.bind('clear', () => setPixels({}));
 
     const handleGlobalMouseUp = () => setIsMouseDown(false);
@@ -56,14 +54,20 @@ export default function Home() {
     }
   }, [canClick, isAdmin]);
 
-  const sendOtp = async () => {
-    await fetch('/api/pixels', { method: 'POST', body: JSON.stringify({ action: 'send_otp', email }) });
-    setStep('otp');
-  };
-
-  const verifyOtp = async () => {
-    const res = await fetch('/api/pixels', { method: 'POST', body: JSON.stringify({ action: 'verify_otp', email, otp, nickname: auth.nick }) });
-    if (res.ok) setStep('login'); else alert('Неверный код или лимит аккаунтов!');
+  const handleLogin = async (e: any) => {
+    e.preventDefault();
+    const res = await fetch('/api/pixels', {
+      method: 'POST',
+      body: JSON.stringify({ nickname: auth.nick, password: auth.pass, action: 'login' })
+    });
+    if (res.ok) {
+      localStorage.setItem('p_nick', auth.nick);
+      localStorage.setItem('p_pass', auth.pass);
+      setIsAuthOk(true);
+    } else {
+      const err = await res.json();
+      alert(err.error || 'Ошибка входа');
+    }
   };
 
   const clickPixel = async (x: number, y: number) => {
@@ -77,39 +81,23 @@ export default function Home() {
 
     await fetch('/api/pixels', {
       method: 'POST',
-      body: JSON.stringify({ x, y, color: selectedColor, nickname: auth.nick, password: auth.pass, action: 'draw', email: localStorage.getItem('p_email'), userId }),
+      body: JSON.stringify({ x, y, color: selectedColor, nickname: auth.nick, password: auth.pass, action: 'draw', userId }),
     });
   };
 
-  if (step === 'email') return (
-    <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', backgroundColor: '#121212', color: '#fff', fontFamily: 'sans-serif' }}>
-      <div style={{ background: '#1e1e1e', padding: '40px', borderRadius: '15px', textAlign: 'center', border: '1px solid #333' }}>
-        <h2 style={{ color: '#4CAF50' }}>Вход в Pixel Battle</h2>
-        <p style={{ color: '#888', fontSize: '14px' }}>Введите почту для получения кода</p>
-        <input placeholder="sapot1151@gmail.com" value={email} onChange={e => setEmail(e.target.value)} style={{ padding: '12px', width: '250px', borderRadius: '5px', border: '1px solid #444', background: '#000', color: '#fff' }} /> <br/><br/>
-        <button onClick={sendOtp} style={{ padding: '12px 30px', background: '#4CAF50', color: '#fff', border: 'none', borderRadius: '5px', cursor: 'pointer', fontWeight: 'bold' }}>Получить код</button>
-      </div>
-    </div>
-  );
+  const getAdminLists = () => {
+    fetch('/api/pixels', { method: 'POST', body: JSON.stringify({ nickname: auth.nick, password: auth.pass, action: 'get_users' }) })
+      .then(r => r.json())
+      .then(setAdminData);
+  };
 
-  if (step === 'otp') return (
+  if (!isAuthOk) return (
     <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', backgroundColor: '#121212', color: '#fff', fontFamily: 'sans-serif' }}>
-      <div style={{ background: '#1e1e1e', padding: '40px', borderRadius: '15px', textAlign: 'center', border: '1px solid #333' }}>
-        <h2>Код подтверждения</h2>
-        <p style={{ color: '#888' }}>Мы отправили 6 цифр на {email}</p>
-        <input placeholder="000000" value={otp} onChange={e => setOtp(e.target.value)} style={{ padding: '12px', width: '250px', textAlign: 'center', fontSize: '20px', letterSpacing: '5px', background: '#000', color: '#fff', border: '1px solid #444' }} /> <br/><br/>
-        <button onClick={verifyOtp} style={{ padding: '12px 30px', background: '#4CAF50', color: '#fff', border: 'none', borderRadius: '5px', cursor: 'pointer' }}>Проверить</button>
-      </div>
-    </div>
-  );
-
-  if (step === 'login') return (
-    <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', backgroundColor: '#121212', color: '#fff', fontFamily: 'sans-serif' }}>
-      <form onSubmit={(e) => { e.preventDefault(); localStorage.setItem('p_nick', auth.nick); localStorage.setItem('p_pass', auth.pass); localStorage.setItem('p_email', email); setStep('game'); }} style={{ background: '#1e1e1e', padding: '40px', borderRadius: '15px', display: 'flex', flexDirection: 'column', gap: '15px', border: '1px solid #333' }}>
-        <h2 style={{ textAlign: 'center' }}>Никнейм и Пароль</h2>
-        <input placeholder="Никнейм" value={auth.nick} onChange={e => setAuth({...auth, nick: e.target.value})} required style={{ padding: '12px', background: '#000', color: '#fff', border: '1px solid #444' }} />
-        <input type="password" placeholder="Пароль" value={auth.pass} onChange={e => setAuth({...auth, pass: e.target.value})} required style={{ padding: '12px', background: '#000', color: '#fff', border: '1px solid #444' }} />
-        <button type="submit" style={{ padding: '12px', background: '#4CAF50', color: '#fff', border: 'none', cursor: 'pointer', fontWeight: 'bold' }}>Войти в игру</button>
+      <form onSubmit={handleLogin} style={{ background: '#1e1e1e', padding: '40px', borderRadius: '15px', display: 'flex', flexDirection: 'column', gap: '15px', border: '1px solid #333', textAlign: 'center' }}>
+        <h2 style={{ color: '#4CAF50' }}>Pixel Battle</h2>
+        <input placeholder="Никнейм" value={auth.nick} onChange={e => setAuth({...auth, nick: e.target.value})} required style={{ padding: '12px', background: '#000', color: '#fff', border: '1px solid #444', borderRadius: '5px' }} />
+        <input type="password" placeholder="Пароль" value={auth.pass} onChange={e => setAuth({...auth, pass: e.target.value})} required style={{ padding: '12px', background: '#000', color: '#fff', border: '1px solid #444', borderRadius: '5px' }} />
+        <button type="submit" style={{ padding: '12px', background: '#4CAF50', color: '#fff', border: 'none', borderRadius: '5px', cursor: 'pointer', fontWeight: 'bold' }}>Войти / Создать</button>
       </form>
     </div>
   );
@@ -118,22 +106,34 @@ export default function Home() {
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', backgroundColor: '#121212', color: '#fff', minHeight: '100vh', padding: '20px', fontFamily: 'sans-serif', userSelect: 'none' }} onMouseDown={() => isAdmin && setIsMouseDown(true)}>
       
       {isAdmin && (
-        <div style={{ position: 'fixed', left: 10, top: 10, width: '220px', background: '#1e1e1e', padding: '15px', borderRadius: '10px', border: '2px solid gold', fontSize: '11px', zIndex: 1000 }}>
-          <h4 style={{ color: 'gold', margin: '0 0 10px 0' }}>👑 ADMIN PANEL</h4>
-          <button onClick={() => fetch('/api/pixels', { method: 'POST', body: JSON.stringify({ nickname: auth.nick, password: auth.pass, action: 'get_users' }) }).then(r => r.json()).then(setAdminData)} style={{ width: '100%', marginBottom: '5px' }}>Обновить списки</button>
-          <div style={{ height: '60px', overflow: 'auto', background: '#000', marginBottom: '5px' }}>Игроки: {adminData.users?.join(', ')}</div>
-          <input placeholder="ID для бана" value={banInput} onChange={e => setBanInput(e.target.value)} style={{ width: '100%', marginBottom: '5px', background: '#000', color: '#fff' }} />
-          <button onClick={() => fetch('/api/pixels', { method: 'POST', body: JSON.stringify({ nickname: auth.nick, password: auth.pass, action: 'ban', targetId: banInput }) })} style={{ width: '100%', backgroundColor: 'red', color: '#fff', border: 'none', cursor: 'pointer' }}>ЗАБАНИТЬ</button>
-          <button onClick={() => { if(confirm('Очистить поле?')) fetch('/api/pixels', { method: 'POST', body: JSON.stringify({ nickname: auth.nick, password: auth.pass, action: 'clear_all' }) }) }} style={{ width: '100%', marginTop: '5px', backgroundColor: '#444', color: '#fff' }}>ОЧИСТИТЬ ПОЛЕ</button>
-          <input type="text" placeholder="HEX Цвет: #ff00ff" onChange={e => setSelectedColor(e.target.value)} style={{ width: '100%', marginTop: '10px', background: '#000', color: '#fff', border: '1px solid #555' }} />
+        <div style={{ position: 'fixed', left: 10, top: 10, width: '250px', background: '#1e1e1e', padding: '15px', borderRadius: '10px', border: '2px solid gold', fontSize: '11px', zIndex: 1000, maxHeight: '90vh', overflowY: 'auto' }}>
+          <h4 style={{ color: 'gold', margin: '0 0 10px 0', textAlign: 'center' }}>👑 ADMIN PANEL</h4>
+          <button onClick={getAdminLists} style={{ width: '100%', marginBottom: '10px', cursor: 'pointer' }}>Обновить списки</button>
+          
+          <p style={{ color: '#4CAF50', margin: '5px 0' }}>Игроки (IP):</p>
+          <div style={{ height: '80px', overflow: 'auto', background: '#000', padding: '5px', marginBottom: '10px' }}>
+            {adminData.users?.map(u => <div key={u}>• {u}</div>)}
+          </div>
+
+          <p style={{ color: 'red', margin: '5px 0' }}>Бан-лист (IDs):</p>
+          <div style={{ height: '80px', overflow: 'auto', background: '#000', padding: '5px', marginBottom: '10px', color: 'red' }}>
+            {adminData.banned?.map(b => <div key={b}>🚫 {b}</div>)}
+          </div>
+
+          <input placeholder="ID для бана" value={banInput} onChange={e => setBanInput(e.target.value)} style={{ width: '100%', marginBottom: '5px', background: '#000', color: '#fff', border: '1px solid #333' }} />
+          <button onClick={() => { fetch('/api/pixels', { method: 'POST', body: JSON.stringify({ nickname: auth.nick, password: auth.pass, action: 'ban', targetId: banInput }) }).then(() => { alert('Забанен!'); getAdminLists(); }); }} style={{ width: '100%', backgroundColor: 'red', color: '#fff', border: 'none', padding: '5px', cursor: 'pointer' }}>ЗАБАНИТЬ</button>
+          
+          <button onClick={() => { if(confirm('Очистить поле?')) fetch('/api/pixels', { method: 'POST', body: JSON.stringify({ nickname: auth.nick, password: auth.pass, action: 'clear_all' }) }) }} style={{ width: '100%', marginTop: '10px', backgroundColor: '#444', color: '#fff' }}>ОЧИСТИТЬ ПОЛЕ</button>
+          
+          <input type="text" placeholder="HEX: #ff00ff" onChange={e => setSelectedColor(e.target.value)} style={{ width: '100%', marginTop: '10px', background: '#000', color: '#fff', border: '1px solid #555' }} />
         </div>
       )}
 
-      <div style={{ position: 'fixed', top: 10, right: 10, fontSize: '14px' }}>
-        {auth.nick} <button onClick={() => {localStorage.clear(); location.reload();}} style={{marginLeft: '10px', fontSize: '10px', background: 'none', border: '1px solid #444', color: '#888', cursor: 'pointer'}}>Выход</button>
+      <div style={{ position: 'fixed', top: 10, right: 10 }}>
+        {auth.nick} <button onClick={() => {localStorage.clear(); location.reload();}} style={{marginLeft: '10px', fontSize: '10px', color: '#888', background: 'none', border: '1px solid #444', cursor: 'pointer'}}>Выход</button>
       </div>
 
-      <h1 style={{ letterSpacing: '5px', textShadow: '0 0 15px rgba(255,255,255,0.1)' }}>PIXEL BATTLE LIVE</h1>
+      <h1 style={{ letterSpacing: '5px' }}>PIXEL BATTLE LIVE</h1>
 
       {!isAdmin && (
         <div style={{ width: '300px', height: '6px', backgroundColor: '#333', marginBottom: '20px', borderRadius: '3px' }}>
@@ -147,7 +147,7 @@ export default function Home() {
         ))}
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: `repeat(${size}, ${cellSize}px)`, gridTemplateRows: `repeat(${size}, ${cellSize}px)`, backgroundColor: '#333', gap: '1px', border: '2px solid #444', position: 'relative' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: `repeat(${size}, ${cellSize}px)`, gridTemplateRows: `repeat(${size}, ${cellSize}px)`, backgroundColor: '#333', gap: '1px', border: '2px solid #444' }}>
         {Array.from({ length: size * size }).map((_, i) => {
           const x = i % size; const y = Math.floor(i / size);
           const data = pixels[`${x}-${y}`];

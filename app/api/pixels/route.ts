@@ -1,107 +1,69 @@
 import { Redis } from '@upstash/redis';
 import { NextResponse } from 'next/server';
 import Pusher from 'pusher';
-import nodemailer from 'nodemailer';
 
 const redis = Redis.fromEnv();
-
 const pusher = new Pusher({
-  appId: "2112054",
-  key: "428b10fa704e1012072a",
-  secret: "f70a4f9565e43e61bf19",
-  cluster: "eu",
-  useTLS: true,
-});
-
-const transporter = nodemailer.createTransport({
-  service: 'gmail',
-  auth: {
-    user: 'sapot1151@gmail.com',
-    pass: process.env.EMAIL_PASS,
-  },
+  appId: "2112054", key: "428b10fa704e1012072a", secret: "f70a4f9565e43e61bf19", cluster: "eu", useTLS: true,
 });
 
 export async function GET() {
-  try {
-    const pixels = await redis.hgetall('board');
-    return NextResponse.json(pixels || {});
-  } catch (e) {
-    return NextResponse.json({});
-  }
+  const pixels = await redis.hgetall('board');
+  return NextResponse.json(pixels || {});
 }
 
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { x, y, color, nickname, password, userId, action, email, otp, targetId } = body;
+    const { x, y, color, nickname, password, userId, action, targetId } = body;
+    const ip = req.headers.get('x-forwarded-for')?.split(',')[0] || '127.0.0.1';
 
-    if (action === 'send_otp') {
-      console.log("Попытка отправить код на:", email); // Лог в консоль Vercel
-      
-      const code = Math.floor(100000 + Math.random() * 900000).toString();
-      await redis.set(`otp:${email}`, code, { ex: 300 });
-      
-      try {
-        await transporter.sendMail({
-          from: '"Pixel Battle" <sapot1151@gmail.com>',
-          to: email,
-          subject: 'Код входа в Pixel Battle',
-          text: `Ваш секретный код: ${code}`,
-        });
-        console.log("Письмо успешно отправлено!");
-        return NextResponse.json({ ok: true });
-      } catch (mailError: any) {
-        console.error("ОШИБКА ОТПРАВКИ ПОЧТЫ:", mailError.message);
-        return NextResponse.json({ ok: false, error: mailError.message }, { status: 500 });
-      }
-    }
+    if (!nickname || !password) return NextResponse.json({ error: 'Нужен ник и пароль' }, { status: 400 });
 
-    if (action === 'verify_otp') {
-      const savedOtp = await redis.get(`otp:${email}`);
-      if (savedOtp !== otp) return NextResponse.json({ error: 'Код' }, { status: 400 });
-      const accounts: any = await redis.smembers(`email_accounts:${email}`);
-      if (accounts && accounts.length >= 2 && !accounts.includes(nickname)) {
-        return NextResponse.json({ error: 'Limit' }, { status: 403 });
-      }
-      return NextResponse.json({ ok: true });
-    }
-
-    const authKey = `auth:${nickname?.toLowerCase()}`;
+    const authKey = `auth:${nickname.toLowerCase()}`;
     const savedPassword = await redis.get(authKey);
-    if (savedPassword && savedPassword !== password) return NextResponse.json({ error: 'Auth' }, { status: 401 });
-    
-    if (!savedPassword && nickname) {
+
+    if (savedPassword) {
+      if (savedPassword !== password) return NextResponse.json({ error: 'Неверный пароль' }, { status: 401 });
+      // Обновляем IP при каждом входе
+      await redis.hset('user_ips', { [nickname]: ip });
+    } else {
+      const ipKey = `ip_limit:${ip}`;
+      const accountsByIp: any = await redis.smembers(ipKey);
+      if (accountsByIp.length >= 2) return NextResponse.json({ error: 'Лимит: 2 аккаунта на IP' }, { status: 403 });
+
       await redis.set(authKey, password);
+      await redis.sadd(ipKey, nickname);
       await redis.sadd('all_users', nickname);
-      if (email) await redis.sadd(`email_accounts:${email}`, nickname);
+      await redis.hset('user_ips', { [nickname]: ip });
     }
 
-    const isAdmin = nickname?.toLowerCase() === 'admin';
+    const isAdmin = nickname.toLowerCase() === 'admin';
 
     if (isAdmin) {
-      if (action === 'clear_all') {
-        await redis.del('board');
-        await pusher.trigger('pixel-channel', 'clear', {});
-        return NextResponse.json({ ok: true });
-      }
-      if (action === 'ban') {
-        await redis.sadd('banned_users', targetId);
-        return NextResponse.json({ ok: true });
-      }
+      if (action === 'clear_all') { await redis.del('board'); await pusher.trigger('pixel-channel', 'clear', {}); return NextResponse.json({ ok: true }); }
+      if (action === 'ban') { await redis.sadd('banned_users', targetId); return NextResponse.json({ ok: true }); }
+      
       if (action === 'get_users') {
         const users = await redis.smembers('all_users');
+        const ips = await redis.hgetall('user_ips') || {};
         const banned = await redis.smembers('banned_users');
-        return NextResponse.json({ users, banned });
+        
+        // Форматируем список: Ник (IP)
+        const usersWithIps = users.map(u => `${u} (${ips[u] || '?.?.?.?'})`);
+        return NextResponse.json({ users: usersWithIps, banned });
       }
     }
 
     const isBanned = await redis.sismember('banned_users', userId);
     if (isBanned) return NextResponse.json({ error: 'Banned' }, { status: 403 });
 
-    const key = `${x}-${y}`;
-    const pixelData = { color, user: nickname, userId: userId };
-    await redis.hset('board', { [key]: JSON.stringify(pixelData) });
-    await pusher.trigger('pixel-channel', 'new-pixel', { key, data: pixelData });
+    if (action === 'draw') {
+      const key = `${x}-${y}`;
+      const pixelData = { color, user: nickname, userId };
+      await redis.hset('board', { [key]: JSON.stringify(pixelData) });
+      await pusher.trigger('pixel-channel', 'new-pixel', { key, data: pixelData });
+    }
 
     return NextResponse.json({ ok: true });
   } catch (e) {
