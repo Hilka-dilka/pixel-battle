@@ -10,6 +10,7 @@ export default function Home() {
   const [cooldown, setCooldown] = useState(100);
   const [canClick, setCanClick] = useState(true);
   const [hoveredInfo, setHoveredInfo] = useState<any>(null);
+  const [showHoveredInfo, setShowHoveredInfo] = useState(false);
   const [isSpaceDown, setIsSpaceDown] = useState(false);
   
   // Состояние админки
@@ -22,7 +23,9 @@ export default function Home() {
   const [scale, setScale] = useState(1);
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+  const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
   const canvasRef = useRef<HTMLDivElement>(null);
+  const hoverTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const size = 60;
   const cellSize = 20;
@@ -69,10 +72,22 @@ export default function Home() {
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('keyup', handleKeyUp);
 
+    // Отслеживание позиции мыши для tooltip
+    const handleMouseMove = (e: MouseEvent) => {
+      setMousePosition({ x: e.clientX, y: e.clientY });
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+
     return () => { 
       pusher.unsubscribe('pixel-channel'); 
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
+      window.removeEventListener('mousemove', handleMouseMove);
+      
+      if (hoverTimeoutRef.current) {
+        clearTimeout(hoverTimeoutRef.current);
+      }
     };
   }, [isAdmin]);
 
@@ -144,6 +159,30 @@ export default function Home() {
     setScale(newScale);
   };
 
+  // Обработчики для tooltip с задержкой
+  const handlePixelEnter = (data: any) => {
+    setHoveredInfo(data);
+    setShowHoveredInfo(false);
+    
+    if (hoverTimeoutRef.current) {
+      clearTimeout(hoverTimeoutRef.current);
+    }
+    
+    hoverTimeoutRef.current = setTimeout(() => {
+      setShowHoveredInfo(true);
+    }, 2000); // 2 секунды задержки
+  };
+
+  const handlePixelLeave = () => {
+    setHoveredInfo(null);
+    setShowHoveredInfo(false);
+    
+    if (hoverTimeoutRef.current) {
+      clearTimeout(hoverTimeoutRef.current);
+      hoverTimeoutRef.current = null;
+    }
+  };
+
   // Сброс камеры
   const resetView = () => {
     setOffset({ x: 0, y: 0 });
@@ -180,7 +219,7 @@ export default function Home() {
       
       {/* ПАНЕЛЬ АДМИНА */}
       {isAdmin && (
-        <div style={{ position: 'fixed', left: 10, top: 10, width: '220px', background: '#1e1e1e', padding: '15px', borderRadius: '10px', border: '2px solid gold', fontSize: '11px', zIndex: 1000 }}>
+        <div style={{ position: 'fixed', left: 10, top: 10, width: '220px', background: '#1e1e1e', padding: '15px', borderRadius: '10px', border: '2px solid gold', fontSize: '11px', zIndex: 2000 }}>
           <h4 style={{ color: 'gold', margin: '0 0 10px 0' }}>ADMIN PANEL</h4>
           <div style={{ fontSize: '10px', color: '#ccc', marginBottom: '10px', padding: '5px', background: '#222', borderRadius: '3px' }}>
             <div>ЗАЖАТИЕ: {isSpaceDown ? '✔️ ПРОБЕЛ' : '❌ ПРОБЕЛ'}</div>
@@ -198,63 +237,80 @@ export default function Home() {
         </div>
       )}
 
-      <div style={{ position: 'fixed', top: 10, right: 10, zIndex: 1000 }}>
+      {/* ВЫБОР ЦВЕТА (ФИКСИРОВАННЫЙ) */}
+      <div style={{ 
+        position: 'fixed', 
+        top: '50%', 
+        left: '20px', 
+        transform: 'translateY(-50%)',
+        display: 'flex', 
+        flexDirection: 'column',
+        gap: '8px', 
+        zIndex: 2000,
+        backgroundColor: 'rgba(30, 30, 30, 0.9)',
+        padding: '15px',
+        borderRadius: '10px',
+        border: '1px solid #444',
+        boxShadow: '0 4px 12px rgba(0,0,0,0.5)'
+      }}>
+        {['#000000', '#808080', '#ffffff', '#ff0000'].map(c => (
+          <div 
+            key={c} 
+            onClick={() => setSelectedColor(c)} 
+            style={{ 
+              width: '40px', 
+              height: '40px', 
+              backgroundColor: c, 
+              border: selectedColor === c ? '3px solid gold' : '1px solid #333', 
+              cursor: 'pointer', 
+              borderRadius: '5px',
+              boxShadow: '0 2px 4px rgba(0,0,0,0.3)',
+              transition: 'transform 0.2s'
+            }}
+            onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.1)'}
+            onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
+            title={c}
+          />
+        ))}
+        <div style={{ 
+          fontSize: '11px', 
+          textAlign: 'center', 
+          marginTop: '5px', 
+          color: '#aaa',
+          borderTop: '1px solid #444',
+          paddingTop: '5px'
+        }}>
+          Выбран: <br/>
+          <div style={{ 
+            width: '20px', 
+            height: '20px', 
+            backgroundColor: selectedColor, 
+            margin: '5px auto',
+            border: '1px solid #fff',
+            borderRadius: '3px'
+          }} />
+        </div>
+      </div>
+
+      <div style={{ position: 'fixed', top: 10, right: 10, zIndex: 2000 }}>
         {auth.nick} <button onClick={() => {localStorage.clear(); location.reload();}} style={{fontSize:'10px'}}>Выход</button>
       </div>
 
-      <h1 style={{ letterSpacing: '3px', marginBottom: '10px' }}>PIXEL BATTLE LIVE</h1>
+      <h1 style={{ letterSpacing: '3px', marginBottom: '10px', zIndex: 1000 }}>PIXEL BATTLE LIVE</h1>
       
       {!isAdmin && (
-        <div style={{ width: '300px', height: '6px', backgroundColor: '#333', marginBottom: '20px', borderRadius: '3px', overflow: 'hidden' }}>
+        <div style={{ 
+          width: '300px', 
+          height: '6px', 
+          backgroundColor: '#333', 
+          marginBottom: '20px', 
+          borderRadius: '3px', 
+          overflow: 'hidden',
+          zIndex: 1000 
+        }}>
           <div style={{ width: `${cooldown}%`, height: '100%', backgroundColor: '#4CAF50' }} />
         </div>
       )}
-
-      {/* КОНТРОЛЫ ЦВЕТОВ */}
-      <div style={{ position: 'relative', zIndex: 1000, marginBottom: '20px' }}>
-        <div style={{ display: 'flex', gap: '8px' }}>
-          {['#000000', '#808080', '#ffffff', '#ff0000'].map(c => (
-            <div 
-              key={c} 
-              onClick={() => setSelectedColor(c)} 
-              style={{ 
-                width: '35px', 
-                height: '35px', 
-                backgroundColor: c, 
-                border: selectedColor === c ? '3px solid gold' : '1px solid #333', 
-                cursor: 'pointer', 
-                borderRadius: '5px',
-                boxShadow: '0 2px 4px rgba(0,0,0,0.3)'
-              }} 
-              title={c}
-            />
-          ))}
-        </div>
-        
-        {/* ИНФОРМАЦИЯ О ЦВЕТЕ */}
-        {hoveredInfo && (
-          <div style={{ 
-            position: 'absolute',
-            top: -85,
-            left: '50%',
-            transform: 'translateX(-50%)',
-            backgroundColor: '#222',
-            padding: '10px',
-            borderRadius: '5px',
-            fontSize: '11px',
-            border: '1px solid gold',
-            zIndex: 100,
-            pointerEvents: 'none',
-            textAlign: 'center',
-            boxShadow: '0 5px 15px rgba(0,0,0,0.5)',
-            minWidth: '180px'
-          }}>
-            <span style={{color: 'gold'}}>Автор:</span> {String(hoveredInfo.user)} <br/>
-            <span style={{color: 'gold'}}>ID:</span> {String(hoveredInfo.userId || 'n/a')} <br/>
-            <span style={{color: 'gold'}}>Цвет:</span> {String(hoveredInfo.color)}
-          </div>
-        )}
-      </div>
 
       {/* ОБЛАСТЬ С ПОЛОТНОМ */}
       <div 
@@ -292,17 +348,15 @@ export default function Home() {
                 key={i} 
                 onMouseDown={(e) => { 
                   e.preventDefault();
-                  // Для админа - рисовать только при зажатом пробеле
-                  // Для обычных пользователей - рисовать всегда
                   if (isAdmin ? isSpaceDown : true) {
                     clickPixel(x, y);
                   }
                 }}
                 onMouseEnter={() => { 
                   if (isAdmin && isSpaceDown) clickPixel(x, y);
-                  if (data) setHoveredInfo({ ...data, x, y });
+                  if (data) handlePixelEnter({ ...data, x, y });
                 }}
-                onMouseLeave={() => setHoveredInfo(null)}
+                onMouseLeave={handlePixelLeave}
                 style={{ 
                   width: `${cellSize}px`, 
                   height: `${cellSize}px`, 
@@ -315,6 +369,46 @@ export default function Home() {
         </div>
       </div>
 
+      {/* TOOLTIP С ИНФОРМАЦИЕЙ (ПОЯВЛЯЕТСЯ У КУРСОРА С ЗАДЕРЖКОЙ) */}
+      {showHoveredInfo && hoveredInfo && (
+        <div style={{ 
+          position: 'fixed',
+          top: mousePosition.y + 15,
+          left: mousePosition.x + 15,
+          backgroundColor: '#222',
+          padding: '10px',
+          borderRadius: '5px',
+          fontSize: '12px',
+          border: '1px solid gold',
+          zIndex: 3000,
+          pointerEvents: 'none',
+          boxShadow: '0 5px 15px rgba(0,0,0,0.7)',
+          minWidth: '200px',
+          animation: 'fadeIn 0.3s ease'
+        }}>
+          <div style={{ marginBottom: '5px' }}>
+            <span style={{color: 'gold'}}>Позиция:</span> {hoveredInfo.x}, {hoveredInfo.y}
+          </div>
+          <div style={{ marginBottom: '5px' }}>
+            <span style={{color: 'gold'}}>Автор:</span> {String(hoveredInfo.user)}
+          </div>
+          <div style={{ marginBottom: '5px' }}>
+            <span style={{color: 'gold'}}>ID:</span> {String(hoveredInfo.userId || 'n/a')}
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span style={{color: 'gold'}}>Цвет:</span> 
+            <div style={{ 
+              width: '20px', 
+              height: '20px', 
+              backgroundColor: hoveredInfo.color, 
+              border: '1px solid #fff',
+              borderRadius: '3px'
+            }} />
+            <span>{String(hoveredInfo.color)}</span>
+          </div>
+        </div>
+      )}
+
       {/* ИНФОРМАЦИЯ О КАМЕРЕ */}
       <div style={{ 
         position: 'fixed', 
@@ -325,7 +419,7 @@ export default function Home() {
         borderRadius: '5px',
         fontSize: '12px',
         border: '1px solid #444',
-        zIndex: 1000
+        zIndex: 2000
       }}>
         Камера: x:{offset.x.toFixed(0)} y:{offset.y.toFixed(0)} масштаб: {scale.toFixed(2)}x
         <button 
@@ -356,13 +450,21 @@ export default function Home() {
         fontSize: '12px',
         border: '1px solid #444',
         maxWidth: '250px',
-        zIndex: 1000
+        zIndex: 2000
       }}>
         <div style={{ color: '#4CAF50', marginBottom: '3px' }}>Управление:</div>
         <div>• Перемещение: зажать ЛКМ и тянуть</div>
         <div>• Зум: колёсико мыши</div>
         {isAdmin && <div>• Рисование: зажать ПРОБЕЛ и кликать</div>}
+        <div>• Информация: навести на пиксель (2 сек)</div>
       </div>
+
+      <style jsx>{`
+        @keyframes fadeIn {
+          from { opacity: 0; transform: translateY(-10px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+      `}</style>
     </div>
   );
 }
