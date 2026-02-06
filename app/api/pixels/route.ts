@@ -5,7 +5,6 @@ import nodemailer from 'nodemailer';
 
 const redis = Redis.fromEnv();
 
-// Ключи Pusher (вписаны вручную)
 const pusher = new Pusher({
   appId: "2112054",
   key: "428b10fa704e1012072a",
@@ -14,12 +13,11 @@ const pusher = new Pusher({
   useTLS: true,
 });
 
-// Настройка почты (Твоя почта sapot1151@gmail.com)
 const transporter = nodemailer.createTransport({
   service: 'gmail',
   auth: {
     user: 'sapot1151@gmail.com',
-    pass: process.env.EMAIL_PASS, // 16-значный код из настроек Vercel
+    pass: process.env.EMAIL_PASS,
   },
 });
 
@@ -37,40 +35,33 @@ export async function POST(req: Request) {
     const body = await req.json();
     const { x, y, color, nickname, password, userId, action, email, otp, targetId } = body;
 
-    // 1. ОТПРАВКА КОДА НА ПОЧТУ
     if (action === 'send_otp') {
       const code = Math.floor(100000 + Math.random() * 900000).toString();
-      await redis.set(`otp:${email}`, code, { ex: 300 }); // Код на 5 минут
-      
+      await redis.set(`otp:${email}`, code, { ex: 300 });
       await transporter.sendMail({
         from: 'sapot1151@gmail.com',
         to: email,
-        subject: 'Pixel Battle - Код входа',
-        text: `Ваш код для входа в игру: ${code}`,
+        subject: 'Pixel Battle - Код',
+        text: `Ваш код: ${code}`,
       });
       return NextResponse.json({ ok: true });
     }
 
-    // 2. ПРОВЕРКА КОДА И ЛИМИТА АККАУНТОВ
     if (action === 'verify_otp') {
       const savedOtp = await redis.get(`otp:${email}`);
-      if (savedOtp !== otp) return NextResponse.json({ error: 'Неверный код' }, { status: 400 });
-      
-      const accounts = await redis.smembers(`email_accounts:${email}`);
-      if (accounts.length >= 2 && !accounts.includes(nickname)) {
-        return NextResponse.json({ error: 'Максимум 2 аккаунта на одну почту!' }, { status: 403 });
+      if (savedOtp !== otp) return NextResponse.json({ error: 'Код' }, { status: 400 });
+      const accounts: any = await redis.smembers(`email_accounts:${email}`);
+      if (accounts && accounts.length >= 2 && !accounts.includes(nickname)) {
+        return NextResponse.json({ error: 'Limit' }, { status: 403 });
       }
       return NextResponse.json({ ok: true });
     }
 
-    // 3. АВТОРИЗАЦИЯ НИКНЕЙМА
     const authKey = `auth:${nickname?.toLowerCase()}`;
     const savedPassword = await redis.get(authKey);
+    if (savedPassword && savedPassword !== password) return NextResponse.json({ error: 'Auth' }, { status: 401 });
     
-    if (savedPassword) {
-      if (savedPassword !== password) return NextResponse.json({ error: 'Wrong Pass' }, { status: 401 });
-    } else if (action === 'draw') {
-      // Регистрация нового ника
+    if (!savedPassword && nickname) {
       await redis.set(authKey, password);
       await redis.sadd('all_users', nickname);
       if (email) await redis.sadd(`email_accounts:${email}`, nickname);
@@ -78,7 +69,6 @@ export async function POST(req: Request) {
 
     const isAdmin = nickname?.toLowerCase() === 'admin';
 
-    // 4. АДМИН-ФУНКЦИИ
     if (isAdmin) {
       if (action === 'clear_all') {
         await redis.del('board');
@@ -96,7 +86,6 @@ export async function POST(req: Request) {
       }
     }
 
-    // 5. РИСОВАНИЕ
     const isBanned = await redis.sismember('banned_users', userId);
     if (isBanned) return NextResponse.json({ error: 'Banned' }, { status: 403 });
 
@@ -107,7 +96,6 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ ok: true });
   } catch (e) {
-    console.error(e);
     return NextResponse.json({ ok: false }, { status: 500 });
   }
 }
