@@ -14,13 +14,14 @@ export async function GET() {
 
 export async function POST(req: Request) {
   try {
-    const { x, y, action } = await req.json(); // Добавляем action
+    const { x, y, action, color } = await req.json();
     const key = `${x}-${y}`;
 
     if (action === 'erase') {
-      await redis.hdel('board', key); // Удаляем пиксель из базы
+      await redis.hdel('board', key);
     } else {
-      await redis.hset('board', { [key]: 1 }); // Ставим пиксель
+      // Сохраняем код цвета (например, "#ff0000")
+      await redis.hset('board', { [key]: color || '#000000' });
     }
 
     return NextResponse.json({ ok: true });
