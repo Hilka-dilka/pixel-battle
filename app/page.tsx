@@ -28,8 +28,8 @@ export default function Home() {
   const hoverTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   
   // Для предотвращения случайного рисования при перемещении
-  const dragStartPixelRef = useRef<{x: number, y: number} | null>(null);
-  const dragThreshold = 5; // Минимальное расстояние для начала перемещения
+  const isClickRef = useRef(true);
+  const dragThreshold = 3; // Минимальное расстояние для начала перемещения
 
   const size = 60;
   const cellSize = 20;
@@ -148,31 +148,33 @@ export default function Home() {
   // Обработчики для перемещения полотна (для всех)
   const handleCanvasMouseDown = (e: React.MouseEvent) => {
     if (e.button === 0) { // ЛКМ
-      // Запоминаем начальную позицию для определения перемещения
-      dragStartPixelRef.current = { x: e.clientX, y: e.clientY };
-      
-      // Для обычных игроков или админа без пробела - начинаем перемещение сразу
-      if (!isAdmin || !isSpaceDown) {
-        setIsDragging(true);
-        setDragStart({ x: e.clientX - offset.x, y: e.clientY - offset.y });
+      // Для админа в режиме рисования - сразу разрешаем клик
+      if (isAdmin && isSpaceDown) {
+        isClickRef.current = true;
+        return;
       }
+      
+      // Для обычных пользователей или админа без пробела
+      // Начинаем как клик, но если двинем мышью - станет перетаскиванием
+      isClickRef.current = true;
+      setIsDragging(false);
+      setDragStart({ x: e.clientX - offset.x, y: e.clientY - offset.y });
       
       e.preventDefault();
     }
   };
 
   const handleCanvasMouseMove = (e: React.MouseEvent) => {
-    if (!isDragging && dragStartPixelRef.current) {
+    if (!isDragging && dragStart) {
       // Проверяем, переместились ли мы достаточно для начала перетаскивания
-      const dx = e.clientX - dragStartPixelRef.current.x;
-      const dy = e.clientY - dragStartPixelRef.current.y;
+      const dx = e.clientX - (dragStart.x + offset.x);
+      const dy = e.clientY - (dragStart.y + offset.y);
       const distance = Math.sqrt(dx * dx + dy * dy);
       
       // Если переместились больше порога - начинаем перетаскивание
       if (distance > dragThreshold) {
         setIsDragging(true);
-        setDragStart({ x: e.clientX - offset.x, y: e.clientY - offset.y });
-        dragStartPixelRef.current = null; // Сбрасываем начальную позицию
+        isClickRef.current = false; // Это уже не клик, а перетаскивание
       }
     }
     
@@ -185,9 +187,8 @@ export default function Home() {
   };
 
   const handleCanvasMouseUp = (e: React.MouseEvent) => {
-    // Если не было перемещения (или было очень малое) и мы не в режиме админа с пробелом
-    // ИЛИ если админ в режиме рисования (пробел зажат)
-    if (!isDragging || (isAdmin && isSpaceDown)) {
+    // Если это был клик (не перетаскивание) - ставим пиксель
+    if (isClickRef.current) {
       // Определяем координаты пикселя по позиции клика
       const rect = canvasRef.current?.getBoundingClientRect();
       if (rect) {
@@ -201,13 +202,17 @@ export default function Home() {
         
         // Проверяем, что клик был внутри сетки
         if (pixelX >= 0 && pixelX < size && pixelY >= 0 && pixelY < size) {
-          clickPixel(pixelX, pixelY);
+          // Для админа - только если пробел зажат
+          // Для обычных игроков - всегда
+          if (isAdmin ? isSpaceDown : true) {
+            clickPixel(pixelX, pixelY);
+          }
         }
       }
     }
     
     setIsDragging(false);
-    dragStartPixelRef.current = null;
+    isClickRef.current = true;
   };
 
   const handleWheel = (e: React.WheelEvent) => {
@@ -239,6 +244,22 @@ export default function Home() {
       clearTimeout(hoverTimeoutRef.current);
       hoverTimeoutRef.current = null;
     }
+  };
+
+  // Клик по пикселю (обработчик для отдельных пикселей)
+  const handlePixelClick = (e: React.MouseEvent, x: number, y: number) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    // Для админа - только если пробел зажат
+    // Для обычных игроков - всегда
+    if (isAdmin ? isSpaceDown : true) {
+      clickPixel(x, y);
+    }
+    
+    // Прерываем перетаскивание
+    setIsDragging(false);
+    isClickRef.current = false;
   };
 
   // Сброс камеры
@@ -460,7 +481,7 @@ export default function Home() {
         onMouseUp={handleCanvasMouseUp}
         onMouseLeave={() => {
           setIsDragging(false);
-          dragStartPixelRef.current = null;
+          isClickRef.current = true;
         }}
         onWheel={handleWheel}
       >
@@ -472,8 +493,7 @@ export default function Home() {
           backgroundColor: '#333', 
           gap: '1px', 
           border: '2px solid #444',
-          boxShadow: '0 8px 24px rgba(0,0,0,0.8)',
-          pointerEvents: 'none' // Убираем события с отдельных пикселей
+          boxShadow: '0 8px 24px rgba(0,0,0,0.8)'
         }}>
           {Array.from({ length: size * size }).map((_, i) => {
             const x = i % size; 
@@ -483,15 +503,20 @@ export default function Home() {
             return (
               <div 
                 key={i} 
+                onClick={(e) => handlePixelClick(e, x, y)}
                 onMouseEnter={() => { 
+                  // Для админа - рисование при зажатом пробеле и наведении
+                  if (isAdmin && isSpaceDown) {
+                    clickPixel(x, y);
+                  }
                   if (data) handlePixelEnter({ ...data, x, y });
                 }}
                 onMouseLeave={handlePixelLeave}
                 style={{ 
                   width: `${cellSize}px`, 
                   height: `${cellSize}px`, 
-                  backgroundColor: data?.color || '#ffffff',
-                  pointerEvents: 'none' // Убираем события с отдельных пикселей
+                  backgroundColor: data?.color || '#ffffff', 
+                  cursor: (isAdmin && isSpaceDown) ? 'crosshair' : 'pointer'
                 }}
               />
             );
@@ -540,7 +565,6 @@ export default function Home() {
           </div>
         </div>
       )}
-
 
       <style jsx global>{`
         @keyframes fadeIn {
