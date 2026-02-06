@@ -79,11 +79,21 @@ export default function Home() {
 
     window.addEventListener('mousemove', handleMouseMove);
 
+    // Предотвращаем скролл страницы колесиком
+    const handleWheelGlobal = (e: WheelEvent) => {
+      if (e.target instanceof HTMLElement && e.target.closest('[data-canvas]')) {
+        e.preventDefault();
+      }
+    };
+
+    window.addEventListener('wheel', handleWheelGlobal, { passive: false });
+
     return () => { 
       pusher.unsubscribe('pixel-channel'); 
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
       window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('wheel', handleWheelGlobal);
       
       if (hoverTimeoutRef.current) {
         clearTimeout(hoverTimeoutRef.current);
@@ -134,8 +144,13 @@ export default function Home() {
   // Обработчики для перемещения полотна (для всех)
   const handleMouseDown = (e: React.MouseEvent) => {
     if (e.button === 0) { // ЛКМ
-      setIsDragging(true);
-      setDragStart({ x: e.clientX - offset.x, y: e.clientY - offset.y });
+      // Для обычных игроков - только перемещение, не рисование при зажатии
+      // Для админа - рисование только при зажатом пробеле
+      if (!isAdmin || !isSpaceDown) {
+        setIsDragging(true);
+        setDragStart({ x: e.clientX - offset.x, y: e.clientY - offset.y });
+        return;
+      }
     }
   };
 
@@ -183,6 +198,17 @@ export default function Home() {
     }
   };
 
+  // Клик по пикселю (только по клику, не при зажатии)
+  const handlePixelClick = (e: React.MouseEvent, x: number, y: number) => {
+    e.preventDefault();
+    
+    // Для админа - только при зажатом пробеле
+    // Для обычных игроков - всегда при клике
+    if (isAdmin ? isSpaceDown : true) {
+      clickPixel(x, y);
+    }
+  };
+
   // Сброс камеры
   const resetView = () => {
     setOffset({ x: 0, y: 0 });
@@ -210,11 +236,15 @@ export default function Home() {
       backgroundColor: '#121212', 
       color: '#fff', 
       minHeight: '100vh', 
-      padding: '20px', 
       fontFamily: 'sans-serif', 
       userSelect: 'none',
       overflow: 'hidden',
-      position: 'relative'
+      position: 'fixed',
+      width: '100%',
+      height: '100%',
+      top: 0,
+      left: 0,
+      margin: 0
     }}>
       
       {/* ПАНЕЛЬ АДМИНА */}
@@ -237,91 +267,71 @@ export default function Home() {
         </div>
       )}
 
-      {/* ВЫБОР ЦВЕТА (ФИКСИРОВАННЫЙ) */}
+      {/* ЗАГОЛОВОК (ФИКСИРОВАННЫЙ) */}
       <div style={{ 
         position: 'fixed', 
-        top: '50%', 
-        left: '20px', 
-        transform: 'translateY(-50%)',
-        display: 'flex', 
-        flexDirection: 'column',
-        gap: '8px', 
+        top: 10, 
+        left: '50%', 
+        transform: 'translateX(-50%)',
         zIndex: 2000,
-        backgroundColor: 'rgba(30, 30, 30, 0.9)',
-        padding: '15px',
-        borderRadius: '10px',
-        border: '1px solid #444',
-        boxShadow: '0 4px 12px rgba(0,0,0,0.5)'
+        textAlign: 'center',
+        width: '100%',
+        pointerEvents: 'none'
       }}>
-        {['#000000', '#808080', '#ffffff', '#ff0000'].map(c => (
-          <div 
-            key={c} 
-            onClick={() => setSelectedColor(c)} 
-            style={{ 
-              width: '40px', 
-              height: '40px', 
-              backgroundColor: c, 
-              border: selectedColor === c ? '3px solid gold' : '1px solid #333', 
-              cursor: 'pointer', 
-              borderRadius: '5px',
-              boxShadow: '0 2px 4px rgba(0,0,0,0.3)',
-              transition: 'transform 0.2s'
-            }}
-            onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.1)'}
-            onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
-            title={c}
-          />
-        ))}
-        <div style={{ 
-          fontSize: '11px', 
-          textAlign: 'center', 
-          marginTop: '5px', 
-          color: '#aaa',
-          borderTop: '1px solid #444',
-          paddingTop: '5px'
+        <h1 style={{ 
+          letterSpacing: '3px', 
+          fontSize: '28px',
+          textShadow: '0 2px 8px rgba(0,0,0,0.8)',
+          margin: 0,
+          color: '#fff'
         }}>
-          Выбран: <br/>
-          <div style={{ 
-            width: '20px', 
-            height: '20px', 
-            backgroundColor: selectedColor, 
-            margin: '5px auto',
-            border: '1px solid #fff',
-            borderRadius: '3px'
-          }} />
-        </div>
+          PIXEL BATTLE LIVE
+        </h1>
       </div>
 
-      <div style={{ position: 'fixed', top: 10, right: 10, zIndex: 2000 }}>
-        {auth.nick} <button onClick={() => {localStorage.clear(); location.reload();}} style={{fontSize:'10px'}}>Выход</button>
+      {/* КНОПКА ВЫХОДА */}
+      <div style={{ 
+        position: 'fixed', 
+        top: 10, 
+        right: 10, 
+        zIndex: 2000,
+        display: 'flex',
+        alignItems: 'center',
+        gap: '10px'
+      }}>
+        <span style={{ 
+          fontSize: '14px',
+          color: '#4CAF50',
+          fontWeight: 'bold'
+        }}>{auth.nick}</span>
+        <button 
+          onClick={() => {localStorage.clear(); location.reload();}} 
+          style={{
+            fontSize: '11px', 
+            padding: '5px 10px',
+            backgroundColor: '#333',
+            border: '1px solid #555',
+            borderRadius: '4px',
+            color: '#fff',
+            cursor: 'pointer'
+          }}
+        >
+          Выход
+        </button>
       </div>
-
-      <h1 style={{ letterSpacing: '3px', marginBottom: '10px', zIndex: 1000 }}>PIXEL BATTLE LIVE</h1>
-      
-      {!isAdmin && (
-        <div style={{ 
-          width: '300px', 
-          height: '6px', 
-          backgroundColor: '#333', 
-          marginBottom: '20px', 
-          borderRadius: '3px', 
-          overflow: 'hidden',
-          zIndex: 1000 
-        }}>
-          <div style={{ width: `${cooldown}%`, height: '100%', backgroundColor: '#4CAF50' }} />
-        </div>
-      )}
 
       {/* ОБЛАСТЬ С ПОЛОТНОМ */}
       <div 
         ref={canvasRef}
+        data-canvas="true"
         style={{ 
-          position: 'relative',
+          position: 'absolute',
+          top: '50%',
+          left: '50%',
+          transform: `translate(calc(-50% + ${offset.x}px), calc(-50% + ${offset.y}px)) scale(${scale})`,
           cursor: isDragging ? 'grabbing' : 'grab',
-          transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})`,
-          transformOrigin: 'center center',
           transition: isDragging ? 'none' : 'transform 0.1s ease',
-          marginBottom: '50px'
+          zIndex: 1
         }}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
@@ -336,7 +346,8 @@ export default function Home() {
           gridTemplateRows: `repeat(${size}, ${cellSize}px)`, 
           backgroundColor: '#333', 
           gap: '1px', 
-          border: '2px solid #444'
+          border: '2px solid #444',
+          boxShadow: '0 8px 24px rgba(0,0,0,0.8)'
         }}>
           {Array.from({ length: size * size }).map((_, i) => {
             const x = i % size; 
@@ -346,14 +357,12 @@ export default function Home() {
             return (
               <div 
                 key={i} 
-                onMouseDown={(e) => { 
-                  e.preventDefault();
-                  if (isAdmin ? isSpaceDown : true) {
+                onClick={(e) => handlePixelClick(e, x, y)}
+                onMouseEnter={() => { 
+                  // Для админа - рисование при зажатом пробеле и наведении
+                  if (isAdmin && isSpaceDown) {
                     clickPixel(x, y);
                   }
-                }}
-                onMouseEnter={() => { 
-                  if (isAdmin && isSpaceDown) clickPixel(x, y);
                   if (data) handlePixelEnter({ ...data, x, y });
                 }}
                 onMouseLeave={handlePixelLeave}
@@ -369,6 +378,94 @@ export default function Home() {
         </div>
       </div>
 
+      {/* ПАЛИТРА ЦВЕТОВ (ФИКСИРОВАННАЯ СНИЗУ) */}
+      <div style={{ 
+        position: 'fixed', 
+        bottom: '70px', 
+        left: '50%', 
+        transform: 'translateX(-50%)',
+        display: 'flex', 
+        gap: '15px', 
+        zIndex: 2000,
+        backgroundColor: 'rgba(20, 20, 20, 0.95)',
+        padding: '15px 25px',
+        borderRadius: '15px',
+        border: '2px solid #444',
+        boxShadow: '0 6px 20px rgba(0,0,0,0.7)',
+        alignItems: 'center'
+      }}>
+        <div style={{ 
+          fontSize: '13px', 
+          color: '#aaa',
+          marginRight: '15px',
+          whiteSpace: 'nowrap'
+        }}>
+          Выбор цвета:
+        </div>
+        {['#000000', '#808080', '#ffffff', '#ff0000'].map(c => (
+          <div 
+            key={c} 
+            onClick={() => setSelectedColor(c)} 
+            style={{ 
+              width: '45px', 
+              height: '45px', 
+              backgroundColor: c, 
+              border: selectedColor === c ? '4px solid gold' : '3px solid #666', 
+              cursor: 'pointer', 
+              borderRadius: '10px',
+              boxShadow: '0 3px 8px rgba(0,0,0,0.5)',
+              transition: 'all 0.2s ease',
+              position: 'relative'
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.transform = 'scale(1.2)';
+              e.currentTarget.style.boxShadow = '0 5px 15px rgba(0,0,0,0.7)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.transform = 'scale(1)';
+              e.currentTarget.style.boxShadow = '0 3px 8px rgba(0,0,0,0.5)';
+            }}
+            title={c}
+          />
+        ))}
+      </div>
+
+      {/* КУЛДАУН БАР (ТОЛЬКО ДЛЯ ОБЫЧНЫХ ИГРОКОВ) */}
+      {!isAdmin && (
+        <div style={{ 
+          position: 'fixed', 
+          bottom: '130px', 
+          left: '50%', 
+          transform: 'translateX(-50%)',
+          width: '300px', 
+          height: '8px', 
+          backgroundColor: '#222', 
+          borderRadius: '4px', 
+          overflow: 'hidden',
+          zIndex: 2000,
+          border: '1px solid #333',
+          boxShadow: '0 3px 10px rgba(0,0,0,0.5)'
+        }}>
+          <div style={{ 
+            width: `${cooldown}%`, 
+            height: '100%', 
+            backgroundColor: cooldown === 100 ? '#4CAF50' : '#FF9800',
+            transition: 'width 0.1s linear, background-color 0.3s ease'
+          }} />
+          <div style={{
+            position: 'absolute',
+            top: '-20px',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            fontSize: '11px',
+            color: cooldown === 100 ? '#4CAF50' : '#FF9800',
+            whiteSpace: 'nowrap'
+          }}>
+            {cooldown === 100 ? 'Готово' : `Ожидание: ${cooldown}%`}
+          </div>
+        </div>
+      )}
+
       {/* TOOLTIP С ИНФОРМАЦИЕЙ (ПОЯВЛЯЕТСЯ У КУРСОРА С ЗАДЕРЖКОЙ) */}
       {showHoveredInfo && hoveredInfo && (
         <div style={{ 
@@ -376,93 +473,56 @@ export default function Home() {
           top: mousePosition.y + 15,
           left: mousePosition.x + 15,
           backgroundColor: '#222',
-          padding: '10px',
-          borderRadius: '5px',
+          padding: '12px',
+          borderRadius: '6px',
           fontSize: '12px',
           border: '1px solid gold',
           zIndex: 3000,
           pointerEvents: 'none',
-          boxShadow: '0 5px 15px rgba(0,0,0,0.7)',
+          boxShadow: '0 5px 20px rgba(0,0,0,0.8)',
           minWidth: '200px',
-          animation: 'fadeIn 0.3s ease'
+          animation: 'fadeIn 0.3s ease',
+          backdropFilter: 'blur(2px)'
         }}>
-          <div style={{ marginBottom: '5px' }}>
-            <span style={{color: 'gold'}}>Позиция:</span> {hoveredInfo.x}, {hoveredInfo.y}
+          <div style={{ marginBottom: '6px' }}>
+            <span style={{color: 'gold', fontWeight: 'bold'}}>Позиция:</span> {hoveredInfo.x}, {hoveredInfo.y}
           </div>
-          <div style={{ marginBottom: '5px' }}>
-            <span style={{color: 'gold'}}>Автор:</span> {String(hoveredInfo.user)}
+          <div style={{ marginBottom: '6px' }}>
+            <span style={{color: 'gold', fontWeight: 'bold'}}>Автор:</span> {String(hoveredInfo.user)}
           </div>
-          <div style={{ marginBottom: '5px' }}>
-            <span style={{color: 'gold'}}>ID:</span> {String(hoveredInfo.userId || 'n/a')}
+          <div style={{ marginBottom: '6px' }}>
+            <span style={{color: 'gold', fontWeight: 'bold'}}>ID:</span> {String(hoveredInfo.userId || 'n/a')}
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span style={{color: 'gold'}}>Цвет:</span> 
+            <span style={{color: 'gold', fontWeight: 'bold'}}>Цвет:</span> 
             <div style={{ 
               width: '20px', 
               height: '20px', 
               backgroundColor: hoveredInfo.color, 
               border: '1px solid #fff',
-              borderRadius: '3px'
+              borderRadius: '3px',
+              boxShadow: '0 2px 4px rgba(0,0,0,0.5)'
             }} />
-            <span>{String(hoveredInfo.color)}</span>
+            <span style={{fontSize: '11px'}}>{String(hoveredInfo.color)}</span>
           </div>
         </div>
       )}
 
-      {/* ИНФОРМАЦИЯ О КАМЕРЕ */}
-      <div style={{ 
-        position: 'fixed', 
-        bottom: 10, 
-        left: 10, 
-        background: 'rgba(0,0,0,0.7)', 
-        padding: '8px', 
-        borderRadius: '5px',
-        fontSize: '12px',
-        border: '1px solid #444',
-        zIndex: 2000
-      }}>
-        Камера: x:{offset.x.toFixed(0)} y:{offset.y.toFixed(0)} масштаб: {scale.toFixed(2)}x
-        <button 
-          onClick={resetView} 
-          style={{ 
-            marginLeft: '10px', 
-            padding: '2px 6px', 
-            fontSize: '10px', 
-            backgroundColor: '#333', 
-            color: '#fff',
-            border: '1px solid #555',
-            borderRadius: '3px',
-            cursor: 'pointer'
-          }}
-        >
-          Сброс
-        </button>
-      </div>
+      
 
-      {/* ИНСТРУКЦИЯ */}
-      <div style={{ 
-        position: 'fixed', 
-        bottom: 10, 
-        right: 10, 
-        background: 'rgba(0,0,0,0.7)', 
-        padding: '8px', 
-        borderRadius: '5px',
-        fontSize: '12px',
-        border: '1px solid #444',
-        maxWidth: '250px',
-        zIndex: 2000
-      }}>
-        <div style={{ color: '#4CAF50', marginBottom: '3px' }}>Управление:</div>
-        <div>• Перемещение: зажать ЛКМ и тянуть</div>
-        <div>• Зум: колёсико мыши</div>
-        {isAdmin && <div>• Рисование: зажать ПРОБЕЛ и кликать</div>}
-        <div>• Информация: навести на пиксель (2 сек)</div>
-      </div>
-
-      <style jsx>{`
+      
+      <style jsx global>{`
         @keyframes fadeIn {
           from { opacity: 0; transform: translateY(-10px); }
           to { opacity: 1; transform: translateY(0); }
+        }
+        
+        body, html {
+          margin: 0;
+          padding: 0;
+          overflow: hidden;
+          width: 100%;
+          height: 100%;
         }
       `}</style>
     </div>
