@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import Pusher from 'pusher-js';
 
 export default function Home() {
@@ -10,14 +10,21 @@ export default function Home() {
   const [cooldown, setCooldown] = useState(100);
   const [canClick, setCanClick] = useState(true);
   const [hoveredInfo, setHoveredInfo] = useState<any>(null);
-  const [isMouseDown, setIsMouseDown] = useState(false);
+  const [isSpaceDown, setIsSpaceDown] = useState(false);
   
   // Состояние админки
   const [adminData, setAdminData] = useState<{users: string[], banned: string[]}>({users: [], banned: []});
   const [banInput, setBanInput] = useState('');
   const isAdmin = auth.nick.toLowerCase() === 'admin';
 
-  const size = 60; // Изменено с 30 на 60
+  // Состояние для перемещения и зума
+  const [offset, setOffset] = useState({ x: 0, y: 0 });
+  const [scale, setScale] = useState(1);
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+  const canvasRef = useRef<HTMLDivElement>(null);
+
+  const size = 60;
   const cellSize = 20;
 
   useEffect(() => {
@@ -45,10 +52,29 @@ export default function Home() {
 
     channel.bind('clear', () => setPixels({}));
 
-    const handleGlobalMouseUp = () => setIsMouseDown(false);
-    window.addEventListener('mouseup', handleGlobalMouseUp);
-    return () => { pusher.unsubscribe('pixel-channel'); window.removeEventListener('mouseup', handleGlobalMouseUp); };
-  }, []);
+    // Обработчики для зажатия ПРОБЕЛА (только админ)
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.code === 'Space' && isAdmin) {
+        e.preventDefault();
+        setIsSpaceDown(true);
+      }
+    };
+
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (e.code === 'Space' && isAdmin) {
+        setIsSpaceDown(false);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+
+    return () => { 
+      pusher.unsubscribe('pixel-channel'); 
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+    };
+  }, [isAdmin]);
 
   useEffect(() => {
     if (!canClick && !isAdmin) {
@@ -90,6 +116,40 @@ export default function Home() {
     if (action === 'ban') alert('Пользователь забанен!');
   };
 
+  // Обработчики для перемещения полотна (для всех)
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if (e.button === 0) { // ЛКМ
+      setIsDragging(true);
+      setDragStart({ x: e.clientX - offset.x, y: e.clientY - offset.y });
+    }
+  };
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (isDragging) {
+      setOffset({
+        x: e.clientX - dragStart.x,
+        y: e.clientY - dragStart.y
+      });
+    }
+  };
+
+  const handleMouseUp = () => {
+    setIsDragging(false);
+  };
+
+  const handleWheel = (e: React.WheelEvent) => {
+    e.preventDefault();
+    const delta = e.deltaY > 0 ? 0.9 : 1.1;
+    const newScale = Math.max(0.5, Math.min(3, scale * delta));
+    setScale(newScale);
+  };
+
+  // Сброс камеры
+  const resetView = () => {
+    setOffset({ x: 0, y: 0 });
+    setScale(1);
+  };
+
   if (!isAuthOk) {
     return (
       <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', backgroundColor: '#121212', color: '#fff' }}>
@@ -104,13 +164,27 @@ export default function Home() {
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', backgroundColor: '#121212', color: '#fff', minHeight: '100vh', padding: '20px', fontFamily: 'sans-serif', userSelect: 'none' }} 
-         onMouseDown={() => isAdmin && setIsMouseDown(true)}>
+    <div style={{ 
+      display: 'flex', 
+      flexDirection: 'column', 
+      alignItems: 'center', 
+      backgroundColor: '#121212', 
+      color: '#fff', 
+      minHeight: '100vh', 
+      padding: '20px', 
+      fontFamily: 'sans-serif', 
+      userSelect: 'none',
+      overflow: 'hidden',
+      position: 'relative'
+    }}>
       
       {/* ПАНЕЛЬ АДМИНА */}
       {isAdmin && (
         <div style={{ position: 'fixed', left: 10, top: 10, width: '220px', background: '#1e1e1e', padding: '15px', borderRadius: '10px', border: '2px solid gold', fontSize: '11px', zIndex: 1000 }}>
           <h4 style={{ color: 'gold', margin: '0 0 10px 0' }}>ADMIN PANEL</h4>
+          <div style={{ fontSize: '10px', color: '#ccc', marginBottom: '10px', padding: '5px', background: '#222', borderRadius: '3px' }}>
+            <div>ЗАЖАТИЕ: {isSpaceDown ? '✔️ ПРОБЕЛ' : '❌ ПРОБЕЛ'}</div>
+          </div>
           <button onClick={() => adminAction('get_users')} style={{ width: '100%', marginBottom: '10px' }}>Список игроков</button>
           <div style={{ maxHeight: '80px', overflowY: 'auto', marginBottom: '10px', background: '#000', padding: '5px' }}>
             <b>Юзеры:</b> {adminData.users?.join(', ')}
@@ -121,60 +195,173 @@ export default function Home() {
           <input placeholder="ID для бана" value={banInput} onChange={e => setBanInput(e.target.value)} style={{ width: '100%', marginBottom: '5px' }} />
           <button onClick={() => adminAction('ban')} style={{ width: '100%', backgroundColor: 'red', color: '#fff', marginBottom: '10px' }}>ЗАБАНИТЬ ПО ID</button>
           <button onClick={() => { if(confirm('Очистить поле?')) adminAction('clear_all') }} style={{ width: '100%', backgroundColor: '#444', color: '#fff' }}>ОЧИСТИТЬ ПОЛЕ</button>
-          <input type="text" placeholder="Цвет HEX: #ff00ff" onChange={e => setSelectedColor(e.target.value)} style={{ width: '100%', marginTop: '10px', background: '#000', color: '#fff' }} />
         </div>
       )}
 
-      <div style={{ position: 'fixed', top: 10, right: 10 }}>
+      <div style={{ position: 'fixed', top: 10, right: 10, zIndex: 1000 }}>
         {auth.nick} <button onClick={() => {localStorage.clear(); location.reload();}} style={{fontSize:'10px'}}>Выход</button>
       </div>
 
-      <h1 style={{ letterSpacing: '3px' }}>PIXEL BATTLE LIVE</h1>
-
+      <h1 style={{ letterSpacing: '3px', marginBottom: '10px' }}>PIXEL BATTLE LIVE</h1>
+      
       {!isAdmin && (
         <div style={{ width: '300px', height: '6px', backgroundColor: '#333', marginBottom: '20px', borderRadius: '3px', overflow: 'hidden' }}>
           <div style={{ width: `${cooldown}%`, height: '100%', backgroundColor: '#4CAF50' }} />
         </div>
       )}
 
-      <div style={{ display: 'flex', gap: '8px', marginBottom: '20px' }}>
-        {['#000000', '#808080', '#ffffff', '#ff0000'].map(c => (
-          <div key={c} onClick={() => setSelectedColor(c)} style={{ width: '35px', height: '35px', backgroundColor: c, border: selectedColor === c ? '3px solid gold' : '1px solid #333', cursor: 'pointer', borderRadius: '5px' }} />
-        ))}
-      </div>
-
-      <div style={{ position: 'relative', display: 'grid', gridTemplateColumns: `repeat(${size}, ${cellSize}px)`, gridTemplateRows: `repeat(${size}, ${cellSize}px)`, backgroundColor: '#333', gap: '1px', border: '2px solid #444' }}>
-        {Array.from({ length: size * size }).map((_, i) => {
-          const x = i % size; const y = Math.floor(i / size);
-          const data = pixels[`${x}-${y}`];
-
-          return (
+      {/* КОНТРОЛЫ ЦВЕТОВ */}
+      <div style={{ position: 'relative', zIndex: 1000, marginBottom: '20px' }}>
+        <div style={{ display: 'flex', gap: '8px' }}>
+          {['#000000', '#808080', '#ffffff', '#ff0000'].map(c => (
             <div 
-              key={i} 
-              onMouseDown={() => { if(isAdmin) setIsMouseDown(true); clickPixel(x, y); }}
-              onMouseEnter={() => { 
-                if (isAdmin && isMouseDown) clickPixel(x, y);
-                if (data) setHoveredInfo({ ...data, x, y });
-              }}
-              onMouseLeave={() => setHoveredInfo(null)}
-              style={{ width: `${cellSize}px`, height: `${cellSize}px`, backgroundColor: data?.color || '#ffffff', cursor: 'crosshair' }}
+              key={c} 
+              onClick={() => setSelectedColor(c)} 
+              style={{ 
+                width: '35px', 
+                height: '35px', 
+                backgroundColor: c, 
+                border: selectedColor === c ? '3px solid gold' : '1px solid #333', 
+                cursor: 'pointer', 
+                borderRadius: '5px',
+                boxShadow: '0 2px 4px rgba(0,0,0,0.3)'
+              }} 
+              title={c}
             />
-          );
-        })}
-
-        {/* TOOLTIP (ИНФОРМАЦИЯ ПРИ НАВЕДЕНИИ) */}
+          ))}
+        </div>
+        
+        {/* ИНФОРМАЦИЯ О ЦВЕТЕ */}
         {hoveredInfo && (
           <div style={{ 
-            position: 'absolute', top: -85, left: '50%', transform: 'translateX(-50%)', 
-            backgroundColor: '#222', padding: '10px', borderRadius: '5px', 
-            fontSize: '11px', border: '1px solid gold', zIndex: 100, 
-            pointerEvents: 'none', textAlign: 'center', boxShadow: '0 5px 15px rgba(0,0,0,0.5)' 
+            position: 'absolute',
+            top: -85,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            backgroundColor: '#222',
+            padding: '10px',
+            borderRadius: '5px',
+            fontSize: '11px',
+            border: '1px solid gold',
+            zIndex: 100,
+            pointerEvents: 'none',
+            textAlign: 'center',
+            boxShadow: '0 5px 15px rgba(0,0,0,0.5)',
+            minWidth: '180px'
           }}>
             <span style={{color: 'gold'}}>Автор:</span> {String(hoveredInfo.user)} <br/>
             <span style={{color: 'gold'}}>ID:</span> {String(hoveredInfo.userId || 'n/a')} <br/>
             <span style={{color: 'gold'}}>Цвет:</span> {String(hoveredInfo.color)}
           </div>
         )}
+      </div>
+
+      {/* ОБЛАСТЬ С ПОЛОТНОМ */}
+      <div 
+        ref={canvasRef}
+        style={{ 
+          position: 'relative',
+          cursor: isDragging ? 'grabbing' : 'grab',
+          transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})`,
+          transformOrigin: 'center center',
+          transition: isDragging ? 'none' : 'transform 0.1s ease',
+          marginBottom: '50px'
+        }}
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+        onMouseLeave={handleMouseUp}
+        onWheel={handleWheel}
+      >
+        {/* СЕТКА ПИКСЕЛЕЙ */}
+        <div style={{ 
+          display: 'grid', 
+          gridTemplateColumns: `repeat(${size}, ${cellSize}px)`, 
+          gridTemplateRows: `repeat(${size}, ${cellSize}px)`, 
+          backgroundColor: '#333', 
+          gap: '1px', 
+          border: '2px solid #444'
+        }}>
+          {Array.from({ length: size * size }).map((_, i) => {
+            const x = i % size; 
+            const y = Math.floor(i / size);
+            const data = pixels[`${x}-${y}`];
+
+            return (
+              <div 
+                key={i} 
+                onMouseDown={(e) => { 
+                  e.preventDefault();
+                  // Для админа - рисовать только при зажатом пробеле
+                  // Для обычных пользователей - рисовать всегда
+                  if (isAdmin ? isSpaceDown : true) {
+                    clickPixel(x, y);
+                  }
+                }}
+                onMouseEnter={() => { 
+                  if (isAdmin && isSpaceDown) clickPixel(x, y);
+                  if (data) setHoveredInfo({ ...data, x, y });
+                }}
+                onMouseLeave={() => setHoveredInfo(null)}
+                style={{ 
+                  width: `${cellSize}px`, 
+                  height: `${cellSize}px`, 
+                  backgroundColor: data?.color || '#ffffff', 
+                  cursor: (isAdmin && isSpaceDown) ? 'crosshair' : 'pointer'
+                }}
+              />
+            );
+          })}
+        </div>
+      </div>
+
+      {/* ИНФОРМАЦИЯ О КАМЕРЕ */}
+      <div style={{ 
+        position: 'fixed', 
+        bottom: 10, 
+        left: 10, 
+        background: 'rgba(0,0,0,0.7)', 
+        padding: '8px', 
+        borderRadius: '5px',
+        fontSize: '12px',
+        border: '1px solid #444',
+        zIndex: 1000
+      }}>
+        Камера: x:{offset.x.toFixed(0)} y:{offset.y.toFixed(0)} масштаб: {scale.toFixed(2)}x
+        <button 
+          onClick={resetView} 
+          style={{ 
+            marginLeft: '10px', 
+            padding: '2px 6px', 
+            fontSize: '10px', 
+            backgroundColor: '#333', 
+            color: '#fff',
+            border: '1px solid #555',
+            borderRadius: '3px',
+            cursor: 'pointer'
+          }}
+        >
+          Сброс
+        </button>
+      </div>
+
+      {/* ИНСТРУКЦИЯ */}
+      <div style={{ 
+        position: 'fixed', 
+        bottom: 10, 
+        right: 10, 
+        background: 'rgba(0,0,0,0.7)', 
+        padding: '8px', 
+        borderRadius: '5px',
+        fontSize: '12px',
+        border: '1px solid #444',
+        maxWidth: '250px',
+        zIndex: 1000
+      }}>
+        <div style={{ color: '#4CAF50', marginBottom: '3px' }}>Управление:</div>
+        <div>• Перемещение: зажать ЛКМ и тянуть</div>
+        <div>• Зум: колёсико мыши</div>
+        {isAdmin && <div>• Рисование: зажать ПРОБЕЛ и кликать</div>}
       </div>
     </div>
   );
