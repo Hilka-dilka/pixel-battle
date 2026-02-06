@@ -21,38 +21,33 @@ export default function Home() {
     const savedPass = localStorage.getItem('p_pass');
     if (savedNick && savedPass) { setAuth({ nick: savedNick, pass: savedPass }); setIsAuthOk(true); }
 
-    // 1. Загружаем всё полотно один раз при входе
+    // Загрузка базы
     fetch('/api/pixels').then(res => res.json()).then(data => {
       const parsed: any = {};
-      for (const k in data) { try { parsed[k] = JSON.parse(data[k]); } catch(e) { parsed[k] = {color: data[k]}; } }
+      for (const k in data) {
+        try {
+          const val = data[k];
+          parsed[k] = typeof val === 'string' ? JSON.parse(val) : val;
+        } catch(e) { parsed[k] = { color: data[k], user: '???' }; }
+      }
       setPixels(parsed);
     });
 
-    // 2. Подключаем Pusher для живых обновлений
-    const pusher = new Pusher("428b10fa704e1012072a", {
-  cluster: "eu",
-});
-
+    // Pusher (Ключ вписан вручную для надежности)
+    const pusher = new Pusher("428b10fa704e1012072a", { cluster: "eu" });
     const channel = pusher.subscribe('pixel-channel');
     
     channel.bind('new-pixel', (update: any) => {
       setPixels(prev => ({ ...prev, [update.key]: update.data }));
     });
 
-    channel.bind('clear', () => {
-      setPixels({});
-    });
+    channel.bind('clear', () => setPixels({}));
 
     const handleGlobalMouseUp = () => setIsMouseDown(false);
     window.addEventListener('mouseup', handleGlobalMouseUp);
-
-    return () => {
-      pusher.unsubscribe('pixel-channel');
-      window.removeEventListener('mouseup', handleGlobalMouseUp);
-    };
+    return () => { pusher.unsubscribe('pixel-channel'); window.removeEventListener('mouseup', handleGlobalMouseUp); };
   }, []);
 
-  // Таймер задержки (только для обычных игроков)
   useEffect(() => {
     if (!canClick && !isAdmin) {
       const timer = setInterval(() => {
@@ -75,15 +70,11 @@ export default function Home() {
     await fetch('/api/pixels', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ x, y, color: selectedColor, nickname: auth.nick, password: auth.pass, userId: localStorage.getItem('p_id') || 'gen_'+auth.nick }),
-    });
-  };
-
-  const adminAction = async (action: string) => {
-    await fetch('/api/pixels', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ nickname: auth.nick, password: auth.pass, action }),
+      body: JSON.stringify({ 
+        x, y, color: selectedColor, 
+        nickname: auth.nick, password: auth.pass, 
+        userId: localStorage.getItem('p_id') || ('gen_'+auth.nick) 
+      }),
     });
   };
 
@@ -91,10 +82,10 @@ export default function Home() {
     return (
       <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', backgroundColor: '#121212', color: '#fff' }}>
         <form onSubmit={(e) => { e.preventDefault(); setIsAuthOk(true); localStorage.setItem('p_nick', auth.nick); localStorage.setItem('p_pass', auth.pass); }} style={{ display: 'flex', flexDirection: 'column', gap: '10px', padding: '30px', background: '#1e1e1e', borderRadius: '10px' }}>
-          <h2>Pixel Battle Online</h2>
-          <input placeholder="Никнейм" value={auth.nick} onChange={e => setAuth({...auth, nick: e.target.value})} style={{ padding: '10px' }} />
+          <h2>Pixel Battle</h2>
+          <input placeholder="Ник" value={auth.nick} onChange={e => setAuth({...auth, nick: e.target.value})} style={{ padding: '10px' }} />
           <input type="password" placeholder="Пароль" value={auth.pass} onChange={e => setAuth({...auth, pass: e.target.value})} style={{ padding: '10px' }} />
-          <button type="submit" style={{ padding: '10px', backgroundColor: '#4CAF50', color: '#fff', cursor: 'pointer' }}>Играть</button>
+          <button type="submit" style={{ padding: '10px', backgroundColor: '#4CAF50', color: '#fff' }}>Играть</button>
         </form>
       </div>
     );
@@ -102,11 +93,11 @@ export default function Home() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', backgroundColor: '#121212', color: '#fff', minHeight: '100vh', padding: '20px', fontFamily: 'sans-serif', userSelect: 'none' }} onMouseDown={() => isAdmin && setIsMouseDown(true)}>
+      
       {isAdmin && (
-        <div style={{ position: 'fixed', right: 10, top: 50, width: '200px', background: '#1e1e1e', padding: '15px', borderRadius: '10px', border: '2px solid gold', fontSize: '12px', zIndex: 1000 }}>
-          <h3 style={{ color: 'gold', margin: '0' }}>ADMIN</h3>
-          <button onClick={() => adminAction('clear_all')} style={{ width: '100%', marginTop: '10px', backgroundColor: 'red', color: '#fff' }}>ОЧИСТИТЬ ПОЛОТНО</button>
-          <input type="text" placeholder="Цвет #000" onChange={e => setSelectedColor(e.target.value)} style={{ width: '100%', marginTop: '10px', background: '#000', color: '#fff' }} />
+        <div style={{ position: 'fixed', right: 10, top: 50, width: '180px', background: '#1e1e1e', padding: '10px', borderRadius: '10px', border: '2px solid gold', zIndex: 1000 }}>
+          <button onClick={() => fetch('/api/pixels', { method: 'POST', body: JSON.stringify({ nickname: auth.nick, password: auth.pass, action: 'clear_all' }) })} style={{ width: '100%', backgroundColor: 'red', color: '#fff' }}>ОЧИСТИТЬ</button>
+          <input type="text" placeholder="#hex" onChange={e => setSelectedColor(e.target.value)} style={{ width: '100%', marginTop: '10px', background: '#000', color: '#fff' }} />
         </div>
       )}
 
@@ -114,32 +105,32 @@ export default function Home() {
 
       {!isAdmin && (
         <div style={{ width: '300px', height: '6px', backgroundColor: '#333', marginBottom: '20px' }}>
-          <div style={{ width: `${cooldown}%`, height: '100%', backgroundColor: '#4CAF50', transition: 'width 0.1s linear' }} />
+          <div style={{ width: `${cooldown}%`, height: '100%', backgroundColor: '#4CAF50' }} />
         </div>
       )}
 
       <div style={{ display: 'flex', gap: '8px', marginBottom: '20px' }}>
         {['#000000', '#808080', '#ffffff', '#ff0000'].map(c => (
-          <div key={c} onClick={() => setSelectedColor(c)} style={{ width: '35px', height: '35px', backgroundColor: c, border: selectedColor === c ? '3px solid gold' : '1px solid #333', cursor: 'pointer', borderRadius: '5px' }} />
+          <div key={c} onClick={() => setSelectedColor(c)} style={{ width: '30px', height: '30px', backgroundColor: c, border: selectedColor === c ? '2px solid gold' : '1px solid #333', cursor: 'pointer' }} />
         ))}
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: `repeat(${size}, ${cellSize}px)`, gridTemplateRows: `repeat(${size}, ${cellSize}px)`, backgroundColor: '#333', gap: '1px', border: '2px solid #444' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: `repeat(${size}, ${cellSize}px)`, gridTemplateRows: `repeat(${size}, ${cellSize}px)`, backgroundColor: '#333', gap: '1px' }}>
         {Array.from({ length: size * size }).map((_, i) => {
           const x = i % size; const y = Math.floor(i / size);
           const data = pixels[`${x}-${y}`];
           return (
             <div key={i} 
               onMouseDown={() => { if(isAdmin) setIsMouseDown(true); clickPixel(x, y); }}
-              onMouseEnter={() => { if(isAdmin && isMouseDown) clickPixel(x, y); data && setHoveredInfo({...data, x, y}); }}
+              onMouseEnter={() => { if(isAdmin && isMouseDown) clickPixel(x, y); setHoveredInfo(data ? {...data, x, y} : null); }}
               onMouseLeave={() => setHoveredInfo(null)}
               style={{ width: `${cellSize}px`, height: `${cellSize}px`, backgroundColor: data?.color || '#ffffff', cursor: 'crosshair' }}
             />
           );
         })}
         {hoveredInfo && (
-          <div style={{ position: 'absolute', top: -70, left: '50%', transform: 'translateX(-50%)', backgroundColor: '#222', padding: '10px', borderRadius: '5px', fontSize: '12px', zIndex: 100, border: '1px solid gold' }}>
-            👤 {hoveredInfo.user} <br/> 🎨 {hoveredInfo.color}
+          <div style={{ position: 'absolute', top: -60, left: '50%', transform: 'translateX(-50%)', backgroundColor: '#222', padding: '10px', borderRadius: '5px', fontSize: '12px', border: '1px solid gold', pointerEvents: 'none' }}>
+            👤 {String(hoveredInfo.user)} <br/> 🎨 {String(hoveredInfo.color)}
           </div>
         )}
       </div>
