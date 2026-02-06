@@ -2,9 +2,9 @@ import { Redis } from '@upstash/redis';
 import { NextResponse } from 'next/server';
 import Pusher from 'pusher';
 
-// Инициализация Redis через переменные окружения Vercel
 const redis = Redis.fromEnv();
 
+// Твои ключи вписаны напрямую
 const pusher = new Pusher({
   appId: "2112054",
   key: "428b10fa704e1012072a",
@@ -17,43 +17,28 @@ export async function GET() {
   try {
     const pixels = await redis.hgetall('board');
     return NextResponse.json(pixels || {});
-  } catch (err) {
-    return NextResponse.json({}, { status: 200 }); // Возвращаем пустой объект, если база пуста
+  } catch (e) {
+    return NextResponse.json({});
   }
 }
 
 export async function POST(req: Request) {
   try {
-    const body = await req.json();
-    const { x, y, color, nickname, password, userId, action, targetId } = body;
-    
-    // Получаем IP для логов админа
-    const ip = req.headers.get('x-forwarded-for')?.split(',')[0] || '127.0.0.1';
-
-    if (!nickname || !password) {
-      return NextResponse.json({ error: 'Введите ник и пароль' }, { status: 400 });
-    }
+    const { x, y, color, nickname, password, userId, action, targetId } = await req.json();
 
     const authKey = `auth:${nickname.toLowerCase()}`;
     const savedPassword = await redis.get(authKey);
-
-    // Логика входа / регистрации
-    if (savedPassword) {
-      if (savedPassword !== password) {
-        return NextResponse.json({ error: 'Неверный пароль' }, { status: 401 });
-      }
-    } else {
-      // РЕГИСТРАЦИЯ НОВОГО (Лимит по IP удален)
-      await redis.set(authKey, password);
-      await redis.sadd('all_users', nickname);
-    }
     
-    // Сохраняем IP пользователя (просто для инфы админу)
-    await redis.hset('user_ips', { [nickname]: ip });
+    if (savedPassword) {
+      if (savedPassword !== password) return NextResponse.json({ error: 'Auth' }, { status: 401 });
+    } else {
+      await redis.set(authKey, password);
+      await redis.sadd('all_users', nickname); // Регистрация ника
+    }
 
     const isAdmin = nickname.toLowerCase() === 'admin';
 
-    // Действия админа
+    // АДМИН-ЛОГИКА
     if (isAdmin) {
       if (action === 'clear_all') {
         await redis.del('board');
@@ -66,30 +51,23 @@ export async function POST(req: Request) {
       }
       if (action === 'get_users') {
         const users = await redis.smembers('all_users');
-        const ips = await redis.hgetall('user_ips') as Record<string, string> || {};
         const banned = await redis.smembers('banned_users');
-        const usersWithIps = users.map(u => `${u} (${ips[u] || '?.?.?.?'})`);
-        return NextResponse.json({ users: usersWithIps, banned });
+        return NextResponse.json({ users, banned });
       }
     }
 
-    // Проверка бана
+    // ЛОГИКА ОБЫЧНОГО ИГРОКА
     const isBanned = await redis.sismember('banned_users', userId);
-    if (isBanned) {
-      return NextResponse.json({ error: 'Ваше устройство забанено' }, { status: 403 });
-    }
+    if (isBanned) return NextResponse.json({ error: 'Banned' }, { status: 403 });
 
-    // Рисование
-    if (action === 'draw') {
-      const key = `${x}-${y}`;
-      const pixelData = { color, user: nickname, userId };
-      await redis.hset('board', { [key]: JSON.stringify(pixelData) });
-      await pusher.trigger('pixel-channel', 'new-pixel', { key, data: pixelData });
-    }
+    const key = `${x}-${y}`;
+    const pixelData = { color, user: nickname, userId: userId };
+    
+    await redis.hset('board', { [key]: JSON.stringify(pixelData) });
+    await pusher.trigger('pixel-channel', 'new-pixel', { key, data: pixelData });
 
     return NextResponse.json({ ok: true });
-  } catch (e: any) {
-    console.error("Ошибка сервера:", e);
-    return NextResponse.json({ error: "Ошибка базы данных" }, { status: 500 });
+  } catch (e) {
+    return NextResponse.json({ ok: false }, { status: 500 });
   }
 }
