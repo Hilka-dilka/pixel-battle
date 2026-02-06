@@ -29,9 +29,9 @@ export default function Home() {
     });
 
     // 2. Подключаем Pusher для живых обновлений
-    const pusher = new Pusher(process.env.NEXT_PUBLIC_PUSHER_KEY!, {
-      cluster: process.env.NEXT_PUBLIC_PUSHER_CLUSTER!,
-    });
+    const pusher = new Pusher("428b10fa704e1012072a", {
+  cluster: "eu",
+});
 
     const channel = pusher.subscribe('pixel-channel');
     
