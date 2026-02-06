@@ -1,5 +1,4 @@
-[file name]: route.ts
-[file content begin]
+
 import { Redis } from '@upstash/redis';
 import { NextResponse } from 'next/server';
 import Pusher from 'pusher';
@@ -127,4 +126,3 @@ export async function POST(req: Request) {
     }, { status: 500 });
   }
 }
-[file content end]
