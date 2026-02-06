@@ -11,21 +11,15 @@ export default function Home() {
   const [canClick, setCanClick] = useState(true);
   const [hoveredInfo, setHoveredInfo] = useState<any>(null);
   const [isMouseDown, setIsMouseDown] = useState(false);
-  const [dragMode, setDragMode] = useState(false);
-  const [isDragging, setIsDragging] = useState(false);
-  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
-  const [offset, setOffset] = useState({ x: 0, y: 0 });
-  const [scale, setScale] = useState(1);
   
   // Состояние админки
   const [adminData, setAdminData] = useState<{users: string[], banned: string[]}>({users: [], banned: []});
   const [banInput, setBanInput] = useState('');
-  const [holdMode, setHoldMode] = useState(true); // Новое состояние для режима зажима
   const isAdmin = auth.nick.toLowerCase() === 'admin';
 
   // Увеличенное полотно до 60x60
   const size = 60;
-  const cellSize = 15;
+  const cellSize = 15; // Немного уменьшил размер ячейки для лучшего отображения
 
   useEffect(() => {
     const savedNick = localStorage.getItem('p_nick');
@@ -52,17 +46,9 @@ export default function Home() {
 
     channel.bind('clear', () => setPixels({}));
 
-    const handleGlobalMouseUp = () => {
-      setIsMouseDown(false);
-      setIsDragging(false);
-    };
-    
+    const handleGlobalMouseUp = () => setIsMouseDown(false);
     window.addEventListener('mouseup', handleGlobalMouseUp);
-    
-    return () => { 
-      pusher.unsubscribe('pixel-channel'); 
-      window.removeEventListener('mouseup', handleGlobalMouseUp); 
-    };
+    return () => { pusher.unsubscribe('pixel-channel'); window.removeEventListener('mouseup', handleGlobalMouseUp); };
   }, []);
 
   useEffect(() => {
@@ -109,56 +95,6 @@ export default function Home() {
     }
   };
 
-  const handleCanvasMouseDown = (e: React.MouseEvent) => {
-    if (!isAdmin) return;
-    
-    if (holdMode) {
-      // Режим зажима - рисуем
-      setIsMouseDown(true);
-    } else {
-      // Режим перетаскивания - начинаем перетаскивание
-      setIsDragging(true);
-      setDragStart({ x: e.clientX - offset.x, y: e.clientY - offset.y });
-    }
-  };
-
-  const handleCanvasMouseMove = (e: React.MouseEvent) => {
-    if (!isAdmin) return;
-    
-    if (holdMode && isMouseDown) {
-      // В режиме зажима рисуем при движении мыши
-      const rect = e.currentTarget.getBoundingClientRect();
-      const scaledCellSize = cellSize * scale;
-      const x = Math.floor((e.clientX - rect.left - offset.x) / scaledCellSize);
-      const y = Math.floor((e.clientY - rect.top - offset.y) / scaledCellSize);
-      
-      if (x >= 0 && x < size && y >= 0 && y < size) {
-        clickPixel(x, y);
-      }
-    } else if (!holdMode && isDragging) {
-      // В режиме перетаскивания двигаем канвас
-      const newOffset = {
-        x: e.clientX - dragStart.x,
-        y: e.clientY - dragStart.y
-      };
-      setOffset(newOffset);
-    }
-  };
-
-  const handleCanvasWheel = (e: React.WheelEvent) => {
-    if (!isAdmin) return;
-    
-    e.preventDefault();
-    const zoomIntensity = 0.1;
-    const newScale = e.deltaY < 0 ? scale + zoomIntensity : scale - zoomIntensity;
-    setScale(Math.min(Math.max(0.5, newScale), 3)); // Ограничиваем масштаб от 0.5x до 3x
-  };
-
-  const resetView = () => {
-    setOffset({ x: 0, y: 0 });
-    setScale(1);
-  };
-
   if (!isAuthOk) {
     return (
       <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', backgroundColor: '#121212', color: '#fff' }}>
@@ -173,59 +109,15 @@ export default function Home() {
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', backgroundColor: '#121212', color: '#fff', minHeight: '100vh', padding: '20px', fontFamily: 'sans-serif', userSelect: 'none' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', backgroundColor: '#121212', color: '#fff', minHeight: '100vh', padding: '20px', fontFamily: 'sans-serif', userSelect: 'none' }} 
+         onMouseDown={() => isAdmin && setIsMouseDown(true)}>
       
       {/* ПАНЕЛЬ АДМИНА */}
       {isAdmin && (
         <div style={{ position: 'fixed', left: 10, top: 10, width: '250px', background: '#1e1e1e', padding: '15px', borderRadius: '10px', border: '2px solid gold', fontSize: '11px', zIndex: 1000, maxHeight: '90vh', overflowY: 'auto' }}>
           <h4 style={{ color: 'gold', margin: '0 0 10px 0' }}>ADMIN PANEL</h4>
           
-          {/* Тоггл режима зажима */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '15px', padding: '8px', background: '#000', borderRadius: '5px' }}>
-            <span style={{ fontSize: '12px' }}>Режим зажима (Paint):</span>
-            <div 
-              onClick={() => setHoldMode(!holdMode)}
-              style={{
-                width: '50px',
-                height: '24px',
-                background: holdMode ? '#4CAF50' : '#666',
-                borderRadius: '12px',
-                position: 'relative',
-                cursor: 'pointer',
-                transition: 'background 0.3s'
-              }}
-            >
-              <div style={{
-                position: 'absolute',
-                top: '2px',
-                left: holdMode ? '28px' : '2px',
-                width: '20px',
-                height: '20px',
-                background: '#fff',
-                borderRadius: '50%',
-                transition: 'left 0.3s'
-              }} />
-            </div>
-          </div>
-          
-          <div style={{ fontSize: '10px', color: '#aaa', marginBottom: '10px', padding: '5px', background: '#000', borderRadius: '3px' }}>
-            {holdMode ? '🖌️ Режим Paint: Зажмите и рисуйте' : '✋ Режим Drag: Перетаскивайте канвас'}
-          </div>
-          
-          {/* Управление видом */}
-          <div style={{ display: 'flex', gap: '5px', marginBottom: '15px' }}>
-            <button 
-              onClick={resetView}
-              style={{ flex: 1, padding: '6px', background: '#333', border: 'none', color: '#fff', borderRadius: '3px', cursor: 'pointer', fontSize: '10px' }}
-            >
-              Сброс вида
-            </button>
-            <div style={{ flex: 1, padding: '6px', background: '#000', borderRadius: '3px', textAlign: 'center', fontSize: '10px' }}>
-              Zoom: {Math.round(scale * 100)}%
-            </div>
-          </div>
-          
-          <button onClick={() => adminAction('get_users')} style={{ width: '100%', marginBottom: '10px', padding: '8px' }}>Обновить списки</button>
+          <button onClick={() => adminAction('get_users')} style={{ width: '100%', marginBottom: '10px' }}>Обновить списки</button>
           
           <div style={{ marginBottom: '10px', background: '#000', padding: '5px', borderRadius: '3px' }}>
             <b style={{color: '#4CAF50'}}>Игроки:</b>
@@ -289,13 +181,13 @@ export default function Home() {
       )}
 
       <div style={{ display: 'flex', gap: '8px', marginBottom: '20px', flexWrap: 'wrap', justifyContent: 'center' }}>
-        {['#000000', '#808080', '#ffffff', '#ff0000'].map(c => (
+        {['#000000', '#808080', '#ffffff', '#ff0000', '#00ff00', '#0000ff', '#ffff00', '#ff00ff', '#00ffff'].map(c => (
           <div 
             key={c} 
             onClick={() => setSelectedColor(c)} 
             style={{ 
-              width: '35px', 
-              height: '35px', 
+              width: '30px', 
+              height: '30px', 
               backgroundColor: c, 
               border: selectedColor === c ? '3px solid gold' : '1px solid #333', 
               cursor: 'pointer', 
@@ -305,91 +197,67 @@ export default function Home() {
         ))}
       </div>
 
-      <div 
-        style={{ 
-          position: 'relative', 
-          backgroundColor: '#333', 
-          border: '2px solid #444',
-          marginBottom: '50px',
-          overflow: 'hidden',
-          cursor: isAdmin ? (holdMode ? 'crosshair' : (isDragging ? 'grabbing' : 'grab')) : 'default',
-          transformOrigin: '0 0'
-        }}
-        onMouseDown={handleCanvasMouseDown}
-        onMouseMove={handleCanvasMouseMove}
-        onMouseUp={() => { setIsMouseDown(false); setIsDragging(false); }}
-        onWheel={handleCanvasWheel}
-      >
-        <div 
-          style={{ 
-            display: 'grid', 
-            gridTemplateColumns: `repeat(${size}, ${cellSize}px)`, 
-            gridTemplateRows: `repeat(${size}, ${cellSize}px)`, 
-            gap: '1px',
-            transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})`,
-            transformOrigin: '0 0',
-            transition: isDragging ? 'none' : 'transform 0.1s'
-          }}
-        >
-          {Array.from({ length: size * size }).map((_, i) => {
-            const x = i % size; 
-            const y = Math.floor(i / size);
-            const data = pixels[`${x}-${y}`];
+      <div style={{ 
+        position: 'relative', 
+        display: 'grid', 
+        gridTemplateColumns: `repeat(${size}, ${cellSize}px)`, 
+        gridTemplateRows: `repeat(${size}, ${cellSize}px)`, 
+        backgroundColor: '#333', 
+        gap: '1px', 
+        border: '2px solid #444',
+        marginBottom: '50px',
+        overflow: 'auto',
+        maxWidth: '100%'
+      }}>
+        {Array.from({ length: size * size }).map((_, i) => {
+          const x = i % size; 
+          const y = Math.floor(i / size);
+          const data = pixels[`${x}-${y}`];
 
-            return (
-              <div 
-                key={i} 
-                onMouseEnter={(e) => {
-                  if (isAdmin && holdMode && isMouseDown) {
-                    // В режиме зажима рисуем при наведении с зажатой кнопкой
-                    clickPixel(x, y);
-                  }
-                  if (data) setHoveredInfo({ ...data, x, y });
-                }}
-                onMouseLeave={() => setHoveredInfo(null)}
-                onClick={() => {
-                  if (!isAdmin) {
-                    clickPixel(x, y);
-                  } else if (holdMode) {
-                    // В режиме зажима клик тоже рисует
-                    clickPixel(x, y);
-                  }
-                }}
-                style={{ 
-                  width: `${cellSize}px`, 
-                  height: `${cellSize}px`, 
-                  backgroundColor: data?.color || '#ffffff', 
-                  transition: 'background-color 0.2s'
-                }}
-              />
-            );
-          })}
+          return (
+            <div 
+              key={i} 
+              onMouseDown={() => { if(isAdmin) setIsMouseDown(true); clickPixel(x, y); }}
+              onMouseEnter={() => { 
+                if (isAdmin && isMouseDown) clickPixel(x, y);
+                if (data) setHoveredInfo({ ...data, x, y });
+              }}
+              onMouseLeave={() => setHoveredInfo(null)}
+              style={{ 
+                width: `${cellSize}px`, 
+                height: `${cellSize}px`, 
+                backgroundColor: data?.color || '#ffffff', 
+                cursor: 'crosshair',
+                transition: 'background-color 0.2s'
+              }}
+            />
+          );
+        })}
 
-          {/* TOOLTIP (ИНФОРМАЦИЯ ПРИ НАВЕДЕНИИ) */}
-          {hoveredInfo && isAdmin && (
-            <div style={{ 
-              position: 'absolute', 
-              top: -85, 
-              left: '50%', 
-              transform: 'translateX(-50%)', 
-              backgroundColor: '#222', 
-              padding: '10px', 
-              borderRadius: '5px', 
-              fontSize: '11px', 
-              border: '1px solid gold', 
-              zIndex: 100, 
-              pointerEvents: 'none', 
-              textAlign: 'center', 
-              boxShadow: '0 5px 15px rgba(0,0,0,0.5)',
-              minWidth: '150px'
-            }}>
-              <div><span style={{color: 'gold'}}>Координаты:</span> {hoveredInfo.x}, {hoveredInfo.y}</div>
-              <div><span style={{color: 'gold'}}>Автор:</span> {String(hoveredInfo.user)}</div>
-              <div><span style={{color: 'gold'}}>ID:</span> {String(hoveredInfo.userId || 'n/a')}</div>
-              <div><span style={{color: 'gold'}}>Цвет:</span> {String(hoveredInfo.color)}</div>
-            </div>
-          )}
-        </div>
+        {/* TOOLTIP (ИНФОРМАЦИЯ ПРИ НАВЕДЕНИИ) */}
+        {hoveredInfo && (
+          <div style={{ 
+            position: 'absolute', 
+            top: -85, 
+            left: '50%', 
+            transform: 'translateX(-50%)', 
+            backgroundColor: '#222', 
+            padding: '10px', 
+            borderRadius: '5px', 
+            fontSize: '11px', 
+            border: '1px solid gold', 
+            zIndex: 100, 
+            pointerEvents: 'none', 
+            textAlign: 'center', 
+            boxShadow: '0 5px 15px rgba(0,0,0,0.5)',
+            minWidth: '150px'
+          }}>
+            <div><span style={{color: 'gold'}}>Координаты:</span> {hoveredInfo.x}, {hoveredInfo.y}</div>
+            <div><span style={{color: 'gold'}}>Автор:</span> {String(hoveredInfo.user)}</div>
+            <div><span style={{color: 'gold'}}>ID:</span> {String(hoveredInfo.userId || 'n/a')}</div>
+            <div><span style={{color: 'gold'}}>Цвет:</span> {String(hoveredInfo.color)}</div>
+          </div>
+        )}
       </div>
     </div>
   );
