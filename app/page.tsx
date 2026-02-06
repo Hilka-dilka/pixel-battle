@@ -28,8 +28,8 @@ export default function Home() {
   const hoverTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   
   // Для предотвращения случайного рисования при перемещении
-  const isClickRef = useRef(true);
-  const dragThreshold = 3; // Минимальное расстояние для начала перемещения
+  const dragStartPosRef = useRef<{x: number, y: number} | null>(null);
+  const isClickActionRef = useRef<boolean>(true);
 
   const size = 60;
   const cellSize = 20;
@@ -148,33 +148,27 @@ export default function Home() {
   // Обработчики для перемещения полотна (для всех)
   const handleCanvasMouseDown = (e: React.MouseEvent) => {
     if (e.button === 0) { // ЛКМ
-      // Для админа в режиме рисования - сразу разрешаем клик
-      if (isAdmin && isSpaceDown) {
-        isClickRef.current = true;
-        return;
-      }
+      // Запоминаем начальную позицию
+      dragStartPosRef.current = { x: e.clientX, y: e.clientY };
+      isClickActionRef.current = true;
       
-      // Для обычных пользователей или админа без пробела
-      // Начинаем как клик, но если двинем мышью - станет перетаскиванием
-      isClickRef.current = true;
-      setIsDragging(false);
-      setDragStart({ x: e.clientX - offset.x, y: e.clientY - offset.y });
-      
+      // Не начинаем перетаскивание сразу, ждем движения
       e.preventDefault();
     }
   };
 
   const handleCanvasMouseMove = (e: React.MouseEvent) => {
-    if (!isDragging && dragStart) {
+    if (!isDragging && dragStartPosRef.current) {
       // Проверяем, переместились ли мы достаточно для начала перетаскивания
-      const dx = e.clientX - (dragStart.x + offset.x);
-      const dy = e.clientY - (dragStart.y + offset.y);
+      const dx = e.clientX - dragStartPosRef.current.x;
+      const dy = e.clientY - dragStartPosRef.current.y;
       const distance = Math.sqrt(dx * dx + dy * dy);
       
-      // Если переместились больше порога - начинаем перетаскивание
-      if (distance > dragThreshold) {
+      // Если переместились больше порога (10px) - начинаем перетаскивание
+      if (distance > 10) {
         setIsDragging(true);
-        isClickRef.current = false; // Это уже не клик, а перетаскивание
+        isClickActionRef.current = false;
+        setDragStart({ x: e.clientX - offset.x, y: e.clientY - offset.y });
       }
     }
     
@@ -186,33 +180,16 @@ export default function Home() {
     }
   };
 
-  const handleCanvasMouseUp = (e: React.MouseEvent) => {
-    // Если это был клик (не перетаскивание) - ставим пиксель
-    if (isClickRef.current) {
-      // Определяем координаты пикселя по позиции клика
-      const rect = canvasRef.current?.getBoundingClientRect();
-      if (rect) {
-        // Учитываем смещение и масштаб
-        const relativeX = (e.clientX - rect.left) / scale;
-        const relativeY = (e.clientY - rect.top) / scale;
-        
-        // Вычисляем координаты пикселя на канвасе
-        const pixelX = Math.floor((relativeX - offset.x) / cellSize);
-        const pixelY = Math.floor((relativeY - offset.y) / cellSize);
-        
-        // Проверяем, что клик был внутри сетки
-        if (pixelX >= 0 && pixelX < size && pixelY >= 0 && pixelY < size) {
-          // Для админа - только если пробел зажат
-          // Для обычных игроков - всегда
-          if (isAdmin ? isSpaceDown : true) {
-            clickPixel(pixelX, pixelY);
-          }
-        }
-      }
+  const handleCanvasMouseUp = () => {
+    // Если это был клик (не перетаскивание) - сбрасываем флаги
+    if (isClickActionRef.current && dragStartPosRef.current) {
+      // Это был просто клик, не перетаскивание
+      // Пиксель поставится через onClick на отдельном пикселе
     }
     
     setIsDragging(false);
-    isClickRef.current = true;
+    dragStartPosRef.current = null;
+    isClickActionRef.current = true;
   };
 
   const handleWheel = (e: React.WheelEvent) => {
@@ -246,7 +223,7 @@ export default function Home() {
     }
   };
 
-  // Клик по пикселю (обработчик для отдельных пикселей)
+  // Клик по пикселю
   const handlePixelClick = (e: React.MouseEvent, x: number, y: number) => {
     e.preventDefault();
     e.stopPropagation();
@@ -256,10 +233,6 @@ export default function Home() {
     if (isAdmin ? isSpaceDown : true) {
       clickPixel(x, y);
     }
-    
-    // Прерываем перетаскивание
-    setIsDragging(false);
-    isClickRef.current = false;
   };
 
   // Сброс камеры
@@ -406,7 +379,7 @@ export default function Home() {
             fontWeight: 'bold',
             textShadow: '0 1px 2px rgba(0,0,0,0.8)'
           }}>
-            {cooldown === 100}
+            {cooldown === 100 ? '✅ Готов к рисованию' : `⏳ Ожидание: ${cooldown}%`}
           </div>
         </div>
       )}
@@ -414,7 +387,7 @@ export default function Home() {
       {/* ПАЛИТРА ЦВЕТОВ (ФИКСИРОВАННАЯ СНИЗУ) */}
       <div style={{ 
         position: 'fixed', 
-        bottom: '80px',
+        bottom: '100px',
         left: '50%', 
         transform: 'translateX(-50%)',
         display: 'flex', 
@@ -481,7 +454,8 @@ export default function Home() {
         onMouseUp={handleCanvasMouseUp}
         onMouseLeave={() => {
           setIsDragging(false);
-          isClickRef.current = true;
+          dragStartPosRef.current = null;
+          isClickActionRef.current = true;
         }}
         onWheel={handleWheel}
       >
@@ -565,6 +539,44 @@ export default function Home() {
           </div>
         </div>
       )}
+
+      {/* ИНФОРМАЦИЯ О КАМЕРЕ */}
+      <div style={{ 
+        position: 'fixed', 
+        bottom: 10, 
+        left: 10, 
+        background: 'rgba(0,0,0,0.8)', 
+        padding: '10px 12px', 
+        borderRadius: '6px',
+        fontSize: '12px',
+        border: '1px solid #444',
+        zIndex: 2000,
+        boxShadow: '0 3px 10px rgba(0,0,0,0.5)'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <div style={{ color: '#aaa' }}>
+            Камера: <span style={{color: '#4CAF50'}}>x:{offset.x.toFixed(0)} y:{offset.y.toFixed(0)}</span> | 
+            Масштаб: <span style={{color: '#4CAF50'}}>{scale.toFixed(2)}x</span>
+          </div>
+          <button 
+            onClick={resetView} 
+            style={{ 
+              padding: '3px 10px', 
+              fontSize: '11px', 
+              backgroundColor: '#333', 
+              color: '#fff',
+              border: '1px solid #555',
+              borderRadius: '4px',
+              cursor: 'pointer',
+              fontWeight: 'bold'
+            }}
+          >
+            Сброс
+          </button>
+        </div>
+      </div>
+
+
 
       <style jsx global>{`
         @keyframes fadeIn {
