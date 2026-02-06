@@ -1,7 +1,16 @@
 import { Redis } from '@upstash/redis';
 import { NextResponse } from 'next/server';
+import Pusher from 'pusher';
 
 const redis = Redis.fromEnv();
+
+const pusher = new Pusher({
+  appId: process.env.PUSHER_APP_ID!,
+  key: process.env.PUSHER_KEY!,
+  secret: process.env.PUSHER_SECRET!,
+  cluster: process.env.NEXT_PUBLIC_PUSHER_CLUSTER!,
+  useTLS: true,
+});
 
 export async function GET() {
   const pixels = await redis.hgetall('board');
@@ -14,38 +23,29 @@ export async function POST(req: Request) {
 
     const authKey = `auth:${nickname.toLowerCase()}`;
     const savedPassword = await redis.get(authKey);
-    
-    if (savedPassword) {
-      if (savedPassword !== password) return NextResponse.json({ error: 'Wrong password' }, { status: 401 });
-    } else {
-      await redis.set(authKey, password);
-      await redis.sadd('all_users', nickname);
-    }
+    if (savedPassword && savedPassword !== password) return NextResponse.json({ error: 'Auth' }, { status: 401 });
+    if (!savedPassword) await redis.set(authKey, password);
 
     const isAdmin = nickname.toLowerCase() === 'admin';
 
-    if (isAdmin) {
-      if (action === 'ban') {
-        await redis.sadd('banned_users', targetId);
-        return NextResponse.json({ ok: true });
-      }
-      if (action === 'clear_all') {
-        await redis.del('board'); // УДАЛЯЕТ ВСЕ ПИКСЕЛИ
-        return NextResponse.json({ ok: true });
-      }
-      if (action === 'get_users') {
-        const users = await redis.smembers('all_users');
-        const banned = await redis.smembers('banned_users');
-        return NextResponse.json({ users, banned });
-      }
+    // Админ-действия
+    if (isAdmin && action === 'clear_all') {
+      await redis.del('board');
+      await pusher.trigger('pixel-channel', 'clear', {}); // Шлем сигнал очистки
+      return NextResponse.json({ ok: true });
     }
 
     const isBanned = await redis.sismember('banned_users', userId);
     if (isBanned) return NextResponse.json({ error: 'Banned' }, { status: 403 });
 
     const key = `${x}-${y}`;
-    const pixelData = JSON.stringify({ color, user: nickname, userId });
-    await redis.hset('board', { [key]: pixelData });
+    const pixelData = { color, user: nickname, userId };
+    
+    // Сохраняем в Redis
+    await redis.hset('board', { [key]: JSON.stringify(pixelData) });
+
+    // Шлем в Pusher (самое главное!)
+    await pusher.trigger('pixel-channel', 'new-pixel', { key, data: pixelData });
 
     return NextResponse.json({ ok: true });
   } catch (e) {
