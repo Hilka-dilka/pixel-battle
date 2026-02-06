@@ -12,6 +12,7 @@ export default function Home() {
   const [hoveredInfo, setHoveredInfo] = useState<any>(null);
   const [showHoveredInfo, setShowHoveredInfo] = useState(false);
   const [isSpaceDown, setIsSpaceDown] = useState(false);
+  const [authError, setAuthError] = useState<string>('');
   
   // Состояние админки
   const [adminData, setAdminData] = useState<{users: string[], banned: string[]}>({users: [], banned: []});
@@ -37,7 +38,10 @@ export default function Home() {
   useEffect(() => {
     const savedNick = localStorage.getItem('p_nick');
     const savedPass = localStorage.getItem('p_pass');
-    if (savedNick && savedPass) { setAuth({ nick: savedNick, pass: savedPass }); setIsAuthOk(true); }
+    if (savedNick && savedPass) { 
+      // Проверяем сохраненные данные при загрузке
+      checkAuth(savedNick, savedPass);
+    }
 
     // Загрузка полотна
     fetch('/api/pixels').then(res => res.json()).then(data => {
@@ -105,6 +109,32 @@ export default function Home() {
     };
   }, [isAdmin]);
 
+  // Проверка авторизации
+  const checkAuth = async (nickname: string, password: string) => {
+    try {
+      const res = await fetch('/api/pixels', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nickname, password, action: 'auth_check' }),
+      });
+      
+      const data = await res.json();
+      if (res.ok) {
+        setAuth({ nick: nickname, pass: password });
+        setIsAuthOk(true);
+        setAuthError('');
+        localStorage.setItem('p_nick', nickname);
+        localStorage.setItem('p_pass', password);
+      } else {
+        setAuthError(data.error || 'Auth failed');
+        localStorage.removeItem('p_nick');
+        localStorage.removeItem('p_pass');
+      }
+    } catch (error) {
+      setAuthError('Network error');
+    }
+  };
+
   useEffect(() => {
     if (!canClick && !isAdmin) {
       const timer = setInterval(() => {
@@ -127,11 +157,20 @@ export default function Home() {
     const userId = localStorage.getItem('p_id') || ('gen_'+auth.nick);
     if (!localStorage.getItem('p_id')) localStorage.setItem('p_id', userId);
 
-    await fetch('/api/pixels', {
+    const res = await fetch('/api/pixels', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ x, y, color: selectedColor, nickname: auth.nick, password: auth.pass, userId }),
     });
+    
+    if (!res.ok) {
+      const data = await res.json();
+      if (data.error === 'Invalid password' || data.error === 'Auth') {
+        setAuthError('Session expired. Please login again.');
+        setIsAuthOk(false);
+        localStorage.clear();
+      }
+    }
   };
 
   const adminAction = async (action: string, target?: string) => {
@@ -141,30 +180,33 @@ export default function Home() {
       body: JSON.stringify({ nickname: auth.nick, password: auth.pass, action, targetId: target || banInput }),
     });
     const data = await res.json();
-    if (action === 'get_users') setAdminData(data);
-    if (action === 'ban') alert('Пользователь забанен!');
+    if (res.ok) {
+      if (action === 'get_users') setAdminData(data);
+      if (action === 'ban') alert('Пользователь забанен!');
+    } else {
+      if (data.error === 'Invalid admin password') {
+        setAuthError('Invalid admin password');
+        setIsAuthOk(false);
+        localStorage.clear();
+      }
+    }
   };
 
   // Обработчики для перемещения полотна (для всех)
   const handleCanvasMouseDown = (e: React.MouseEvent) => {
     if (e.button === 0) { // ЛКМ
-      // Запоминаем начальную позицию
       dragStartPosRef.current = { x: e.clientX, y: e.clientY };
       isClickActionRef.current = true;
-      
-      // Не начинаем перетаскивание сразу, ждем движения
       e.preventDefault();
     }
   };
 
   const handleCanvasMouseMove = (e: React.MouseEvent) => {
     if (!isDragging && dragStartPosRef.current) {
-      // Проверяем, переместились ли мы достаточно для начала перетаскивания
       const dx = e.clientX - dragStartPosRef.current.x;
       const dy = e.clientY - dragStartPosRef.current.y;
       const distance = Math.sqrt(dx * dx + dy * dy);
       
-      // Если переместились больше порога (10px) - начинаем перетаскивание
       if (distance > 10) {
         setIsDragging(true);
         isClickActionRef.current = false;
@@ -181,12 +223,6 @@ export default function Home() {
   };
 
   const handleCanvasMouseUp = () => {
-    // Если это был клик (не перетаскивание) - сбрасываем флаги
-    if (isClickActionRef.current && dragStartPosRef.current) {
-      // Это был просто клик, не перетаскивание
-      // Пиксель поставится через onClick на отдельном пикселе
-    }
-    
     setIsDragging(false);
     dragStartPosRef.current = null;
     isClickActionRef.current = true;
@@ -210,7 +246,7 @@ export default function Home() {
     
     hoverTimeoutRef.current = setTimeout(() => {
       setShowHoveredInfo(true);
-    }, 2000); // 2 секунды задержки
+    }, 2000);
   };
 
   const handlePixelLeave = () => {
@@ -228,8 +264,6 @@ export default function Home() {
     e.preventDefault();
     e.stopPropagation();
     
-    // Для админа - только если пробел зажат
-    // Для обычных игроков - всегда
     if (isAdmin ? isSpaceDown : true) {
       clickPixel(x, y);
     }
@@ -241,14 +275,44 @@ export default function Home() {
     setScale(1);
   };
 
+  // Авторизация
+  const handleAuthSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthError('');
+    await checkAuth(auth.nick, auth.pass);
+  };
+
   if (!isAuthOk) {
     return (
       <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', backgroundColor: '#121212', color: '#fff' }}>
-        <form onSubmit={(e) => { e.preventDefault(); setIsAuthOk(true); localStorage.setItem('p_nick', auth.nick); localStorage.setItem('p_pass', auth.pass); }} style={{ display: 'flex', flexDirection: 'column', gap: '10px', padding: '30px', background: '#1e1e1e', borderRadius: '10px' }}>
+        <form onSubmit={handleAuthSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '10px', padding: '30px', background: '#1e1e1e', borderRadius: '10px', width: '300px' }}>
           <h2>Pixel Battle</h2>
-          <input placeholder="Ник" value={auth.nick} onChange={e => setAuth({...auth, nick: e.target.value})} style={{ padding: '10px' }} />
-          <input type="password" placeholder="Пароль" value={auth.pass} onChange={e => setAuth({...auth, pass: e.target.value})} style={{ padding: '10px' }} />
-          <button type="submit" style={{ padding: '10px', backgroundColor: '#4CAF50', color: '#fff' }}>Войти</button>
+          {authError && (
+            <div style={{ color: '#ff4444', fontSize: '14px', padding: '8px', background: '#2a1a1a', borderRadius: '4px' }}>
+              {authError}
+            </div>
+          )}
+          <input 
+            placeholder="Ник" 
+            value={auth.nick} 
+            onChange={e => setAuth({...auth, nick: e.target.value})} 
+            style={{ padding: '10px' }} 
+            required
+          />
+          <input 
+            type="password" 
+            placeholder="Пароль" 
+            value={auth.pass} 
+            onChange={e => setAuth({...auth, pass: e.target.value})} 
+            style={{ padding: '10px' }} 
+            required
+          />
+          <div style={{ fontSize: '12px', color: '#aaa', marginTop: '-5px' }}>
+            {auth.nick.toLowerCase() === 'admin' ? 'Введите пароль админа' : 'Создаст аккаунт, если не существует'}
+          </div>
+          <button type="submit" style={{ padding: '10px', backgroundColor: '#4CAF50', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>
+            Войти
+          </button>
         </form>
       </div>
     );
@@ -293,7 +357,7 @@ export default function Home() {
         </div>
       )}
 
-      {/* ЗАГОЛОВОК (ФИКСИРОВАННЫЙ) */}
+      {/* ЗАГОЛОВОК */}
       <div style={{ 
         position: 'fixed', 
         top: 10, 
@@ -346,7 +410,7 @@ export default function Home() {
         </button>
       </div>
 
-      {/* КУЛДАУН БАР (ТОЛЬКО ДЛЯ ОБЫЧНЫХ ИГРОКОВ) */}
+      {/* КУЛДАУН БАР */}
       {!isAdmin && (
         <div style={{ 
           position: 'fixed', 
@@ -384,7 +448,7 @@ export default function Home() {
         </div>
       )}
 
-      {/* ПАЛИТРА ЦВЕТОВ (ФИКСИРОВАННАЯ СНИЗУ) */}
+      {/* ПАЛИТРА ЦВЕТОВ */}
       <div style={{ 
         position: 'fixed', 
         bottom: '100px',
@@ -479,7 +543,6 @@ export default function Home() {
                 key={i} 
                 onClick={(e) => handlePixelClick(e, x, y)}
                 onMouseEnter={() => { 
-                  // Для админа - рисование при зажатом пробеле и наведении
                   if (isAdmin && isSpaceDown) {
                     clickPixel(x, y);
                   }
@@ -498,7 +561,7 @@ export default function Home() {
         </div>
       </div>
 
-      {/* TOOLTIP С ИНФОРМАЦИЕЙ (ПОЯВЛЯЕТСЯ У КУРСОРА С ЗАДЕРЖКОЙ) */}
+      {/* TOOLTIP */}
       {showHoveredInfo && hoveredInfo && (
         <div style={{ 
           position: 'fixed',
@@ -576,7 +639,27 @@ export default function Home() {
         </div>
       </div>
 
-
+      {/* ИНСТРУКЦИЯ */}
+      <div style={{ 
+        position: 'fixed', 
+        bottom: 10, 
+        right: 10, 
+        background: 'rgba(0,0,0,0.8)', 
+        padding: '10px 12px', 
+        borderRadius: '6px',
+        fontSize: '12px',
+        border: '1px solid #444',
+        maxWidth: '250px',
+        zIndex: 2000,
+        boxShadow: '0 3px 10px rgba(0,0,0,0.5)'
+      }}>
+        <div style={{ color: '#4CAF50', marginBottom: '4px', fontWeight: 'bold' }}>Управление:</div>
+        <div>• Перемещение: зажать ЛКМ и тянуть</div>
+        <div>• Зум: колёсико мыши</div>
+        <div>• Рисование: клик по пикселю</div>
+        {isAdmin && <div>• Режим рисования админа: ПРОБЕЛ</div>}
+        <div>• Информация: навести (2 сек)</div>
+      </div>
 
       <style jsx global>{`
         @keyframes fadeIn {
