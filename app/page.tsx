@@ -19,8 +19,13 @@ export default function Home() {
   const [showHoveredInfo, setShowHoveredInfo] = useState(false);
   const [isSpaceDown, setIsSpaceDown] = useState(false);
   const [authError, setAuthError] = useState<string>('');
+  const [loadingStats, setLoadingStats] = useState(false);
   
-  // Состояние админки
+  // Статистика игроков (доступна всем)
+  const [playerStats, setPlayerStats] = useState<PlayerStats[]>([]);
+  const [onlineCount, setOnlineCount] = useState(0);
+
+  // Состояние админки (только для админа)
   const [adminData, setAdminData] = useState<{
     users: string[], 
     banned: string[],
@@ -30,10 +35,6 @@ export default function Home() {
   
   const [banInput, setBanInput] = useState('');
   const isAdmin = auth.nick.toLowerCase() === 'admin';
-
-  // Онлайн игроки и статистика
-  const [playerStats, setPlayerStats] = useState<PlayerStats[]>([]);
-  const [onlineCount, setOnlineCount] = useState(0);
 
   // Состояние для перемещения и зума
   const [offset, setOffset] = useState({ x: 0, y: 0 });
@@ -135,77 +136,76 @@ export default function Home() {
     };
   }, [isAdmin]);
 
-  // Загрузка статистики игроков
   // Загрузка статистики игроков (для всех пользователей)
-const loadPlayerStats = async () => {
-  setLoadingStats(true);
-  try {
-    const res = await fetch('/api/pixels', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ 
-        nickname: auth.nick, 
-        password: auth.pass,
-        action: isAdmin ? 'get_users' : 'get_stats' 
-      }),
-    });
-    
-    if (res.ok) {
-      const data = await res.json();
+  const loadPlayerStats = async () => {
+    setLoadingStats(true);
+    try {
+      const res = await fetch('/api/pixels', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          nickname: auth.nick, 
+          password: auth.pass,
+          action: isAdmin ? 'get_users' : 'get_stats' 
+        }),
+      });
       
-      // Для админа сохраняем полные данные
-      if (isAdmin) {
-        setAdminData({
-          users: data.users || [],
-          banned: data.banned || [],
-          userStats: data.userStats || {},
-          onlineUsers: data.onlineUsers || []
-        });
+      if (res.ok) {
+        const data = await res.json();
+        
+        // Для админа сохраняем полные данные
+        if (isAdmin) {
+          setAdminData({
+            users: data.users || [],
+            banned: data.banned || [],
+            userStats: data.userStats || {},
+            onlineUsers: data.onlineUsers || []
+          });
+        }
+        
+        // Для всех пользователей формируем статистику
+        const userStats = data.userStats || {};
+        const onlineUsers = data.onlineUsers || [];
+        
+        // Собираем всех пользователей из разных источников
+        const allUsersSet = new Set<string>();
+        
+        // Добавляем пользователей из userStats
+        Object.keys(userStats).forEach(user => allUsersSet.add(user));
+        
+        // Добавляем онлайн пользователей
+        onlineUsers.forEach(user => allUsersSet.add(user));
+        
+        // Для админа добавляем всех зарегистрированных пользователей
+        if (isAdmin && data.users) {
+          data.users.forEach(user => allUsersSet.add(user));
+        }
+        
+        // Формируем статистику игроков
+        const stats: PlayerStats[] = Array.from(allUsersSet)
+          .filter(user => user && user !== 'admin')
+          .map(user => ({
+            nickname: user,
+            pixelsCount: userStats[user] || 0,
+            isOnline: onlineUsers.includes(user)
+          }));
+        
+        // Сортируем по количеству пикселей (по убыванию)
+        stats.sort((a, b) => b.pixelsCount - a.pixelsCount);
+        setPlayerStats(stats);
+        setOnlineCount(onlineUsers.length);
+      } else {
+        const errorData = await res.json().catch(() => ({}));
+        console.error('Failed to load stats:', errorData);
       }
-      
-      // Для всех пользователей формируем статистику
-      const userStats = data.userStats || {};
-      const onlineUsers = data.onlineUsers || [];
-      
-      // Собираем всех пользователей из разных источников
-      const allUsersSet = new Set<string>();
-      
-      // Добавляем пользователей из userStats
-      Object.keys(userStats).forEach(user => allUsersSet.add(user));
-      
-      // Добавляем онлайн пользователей
-      onlineUsers.forEach(user => allUsersSet.add(user));
-      
-      // Для админа добавляем всех зарегистрированных пользователей
-      if (isAdmin && data.users) {
-        data.users.forEach(user => allUsersSet.add(user));
-      }
-      
-      // Формируем статистику игроков
-      const stats: PlayerStats[] = Array.from(allUsersSet)
-        .filter(user => user && user !== 'admin')
-        .map(user => ({
-          nickname: user,
-          pixelsCount: userStats[user] || 0,
-          isOnline: onlineUsers.includes(user)
-        }));
-      
-      // Сортируем по количеству пикселей (по убыванию)
-      stats.sort((a, b) => b.pixelsCount - a.pixelsCount);
-      setPlayerStats(stats);
-      setOnlineCount(onlineUsers.length);
-    } else {
-      const errorData = await res.json().catch(() => ({}));
-      console.error('Failed to load stats:', errorData);
+    } catch (error) {
+      console.error('Failed to load player stats:', error);
+    } finally {
+      setLoadingStats(false);
     }
-  } catch (error) {
-    console.error('Failed to load player stats:', error);
-  } finally {
-    setLoadingStats(false);
-  }
-};
+  };
 
-  // Автоматическое обновление статистики
+  // Автоматическое обновление статистики для всех
   useEffect(() => {
     if (isAuthOk) {
       // Загружаем сразу
@@ -485,7 +485,7 @@ const loadPlayerStats = async () => {
       margin: 0
     }}>
       
-      {/* ПАНЕЛЬ АДМИНА */}
+      {/* ПАНЕЛЬ АДМИНА (только для админа) */}
       {isAdmin && (
         <div style={{ position: 'fixed', left: 10, top: 10, width: '220px', background: '#1e1e1e', padding: '15px', borderRadius: '10px', border: '2px solid gold', fontSize: '11px', zIndex: 2000 }}>
           <h4 style={{ color: 'gold', margin: '0 0 10px 0' }}>ADMIN PANEL</h4>
@@ -505,7 +505,7 @@ const loadPlayerStats = async () => {
         </div>
       )}
 
-      {/* ПАНЕЛЬ СТАТИСТИКИ ИГРОКОВ */}
+      {/* ПАНЕЛЬ СТАТИСТИКИ ИГРОКОВ (для всех) */}
       <div style={{ 
         position: 'fixed', 
         top: 10, 
@@ -521,17 +521,22 @@ const loadPlayerStats = async () => {
           background: 'rgba(30, 30, 30, 0.95)',
           padding: '12px',
           borderRadius: '8px',
-          border: '1px solid #444',
+          border: `1px solid ${isAdmin ? 'gold' : '#444'}`,
           boxShadow: '0 4px 12px rgba(0,0,0,0.5)'
         }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-            <span style={{ 
-              fontSize: '14px',
-              color: '#4CAF50',
-              fontWeight: 'bold'
-            }}>
-              {auth.nick} {isAdmin && '👑'}
-            </span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{ 
+                fontSize: '14px',
+                color: isAdmin ? 'gold' : '#4CAF50',
+                fontWeight: 'bold'
+              }}>
+                {auth.nick} {isAdmin && '👑'}
+              </span>
+              {loadingStats && (
+                <span style={{ fontSize: '10px', color: '#FF9800' }}>🔄</span>
+              )}
+            </div>
             <button 
               onClick={() => {localStorage.clear(); location.reload();}} 
               style={{
@@ -559,6 +564,11 @@ const loadPlayerStats = async () => {
             textAlign: 'center'
           }}>
             <span style={{ color: '#4CAF50' }}>🟢 Онлайн: {onlineCount} игроков</span>
+            {!isAdmin && (
+              <span style={{ marginLeft: '10px', color: '#FF9800' }}>
+                Ваши пиксели: {playerStats.find(p => p.nickname === auth.nick)?.pixelsCount || 0}
+              </span>
+            )}
           </div>
           
           {/* СПИСОК ИГРОКОВ */}
@@ -594,7 +604,8 @@ const loadPlayerStats = async () => {
                     background: index % 2 === 0 ? '#222' : '#1a1a1a',
                     borderRadius: '3px',
                     marginBottom: '3px',
-                    borderLeft: `3px solid ${player.isOnline ? '#4CAF50' : '#666'}`
+                    borderLeft: `3px solid ${player.isOnline ? '#4CAF50' : '#666'}`,
+                    borderRight: player.nickname === auth.nick ? '2px solid #4CAF50' : 'none'
                   }}
                 >
                   <span style={{ 
@@ -625,7 +636,7 @@ const loadPlayerStats = async () => {
                 color: '#666', 
                 fontSize: '10px'
               }}>
-                Нет данных об игроках
+                {loadingStats ? 'Загрузка статистики...' : 'Нет данных об игроках'}
               </div>
             )}
           </div>
@@ -633,19 +644,21 @@ const loadPlayerStats = async () => {
           {/* КНОПКА ОБНОВЛЕНИЯ */}
           <button 
             onClick={loadPlayerStats}
+            disabled={loadingStats}
             style={{
               width: '100%',
               fontSize: '10px',
               padding: '6px',
-              backgroundColor: '#333',
+              backgroundColor: loadingStats ? '#555' : '#333',
               border: '1px solid #444',
               borderRadius: '4px',
               color: '#fff',
-              cursor: 'pointer',
-              marginTop: '8px'
+              cursor: loadingStats ? 'not-allowed' : 'pointer',
+              marginTop: '8px',
+              opacity: loadingStats ? 0.7 : 1
             }}
           >
-            🔄 Обновить статистику
+            {loadingStats ? '🔄 Загрузка...' : '🔄 Обновить статистику'}
           </button>
         </div>
       </div>
@@ -901,7 +914,6 @@ const loadPlayerStats = async () => {
         </div>
       </div>
 
-      
 
       <style jsx global>{`
         @keyframes fadeIn {
