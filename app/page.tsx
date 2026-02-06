@@ -3,17 +3,33 @@ import { useEffect, useState } from 'react';
 
 export default function Home() {
   const [pixels, setPixels] = useState<Record<string, any>>({});
-  const [tool, setTool] = useState<'draw' | 'erase'>('draw'); // draw или erase
+  const [tool, setTool] = useState<'draw' | 'erase'>('draw');
   const size = 30;
 
+  // Функция для загрузки данных с сервера
+  const loadPixels = async () => {
+    try {
+      const res = await fetch('/api/pixels');
+      const data = await res.json();
+      setPixels(data || {});
+    } catch (e) {
+      console.error("Ошибка при обновлении данных", e);
+    }
+  };
+
+  // 1. Загрузка при первом входе + авто-обновление каждые 2 секунды
   useEffect(() => {
-    fetch('/api/pixels').then((res) => res.json()).then((data) => setPixels(data || {}));
+    loadPixels(); // Загрузить сразу
+
+    const interval = setInterval(() => {
+      loadPixels(); // Спрашивать сервер каждые 2000 мс (2 секунды)
+    }, 2000);
+
+    return () => clearInterval(interval); // Очистить таймер, если закрыли страницу
   }, []);
 
   const clickPixel = async (x: number, y: number) => {
     const key = `${x}-${y}`;
-    
-    // Новое состояние пикселей для экрана
     const newPixels = { ...pixels };
 
     if (tool === 'draw') {
@@ -24,9 +40,9 @@ export default function Home() {
       delete newPixels[key];
     }
 
-    setPixels(newPixels); // Сразу обновляем экран
+    setPixels(newPixels); // Мгновенно обновляем у себя
 
-    // Отправляем запрос на сервер с указанием действия
+    // Отправляем на сервер
     await fetch('/api/pixels', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -36,9 +52,8 @@ export default function Home() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', backgroundColor: '#f5f5f5', minHeight: '100vh', padding: '20px' }}>
-      <h1>Pixel Battle</h1>
+      <h1>Pixel Battle (LIVE 🔴)</h1>
 
-      {/* Панель инструментов */}
       <div style={{ marginBottom: '20px', display: 'flex', gap: '10px' }}>
         <button 
           onClick={() => setTool('draw')}
@@ -64,7 +79,6 @@ export default function Home() {
         </button>
       </div>
 
-      {/* Сетка */}
       <div style={{ 
         display: 'grid', 
         gridTemplateColumns: `repeat(${size}, 15px)`,
@@ -82,12 +96,13 @@ export default function Home() {
                 width: '15px', height: '15px',
                 border: '0.5px solid #eee',
                 backgroundColor: isBlack ? 'black' : 'white',
-                cursor: tool === 'draw' ? 'crosshair' : 'not-allowed'
+                cursor: 'crosshair'
               }}
             />
           );
         })}
       </div>
+      <p style={{ color: '#888', marginTop: '10px' }}>Обновление каждые 2 секунды...</p>
     </div>
   );
 }
