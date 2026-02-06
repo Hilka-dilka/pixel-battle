@@ -4,25 +4,47 @@ import { NextResponse } from 'next/server';
 const redis = Redis.fromEnv();
 
 export async function GET() {
-  try {
-    const pixels = await redis.hgetall('board');
-    return NextResponse.json(pixels || {});
-  } catch (e) {
-    return NextResponse.json({});
-  }
+  const pixels = await redis.hgetall('board');
+  return NextResponse.json(pixels || {});
 }
 
 export async function POST(req: Request) {
   try {
-    const { x, y, action, color } = await req.json();
-    const key = `${x}-${y}`;
+    const { x, y, color, nickname, password, userId, action, targetId } = await req.json();
 
-    if (action === 'erase') {
-      await redis.hdel('board', key);
+    // 1. Проверка авторизации
+    const authKey = `auth:${nickname.toLowerCase()}`;
+    const savedPassword = await redis.get(authKey);
+    
+    if (savedPassword) {
+      if (savedPassword !== password) return NextResponse.json({ error: 'Wrong password' }, { status: 401 });
     } else {
-      // Сохраняем код цвета (например, "#ff0000")
-      await redis.hset('board', { [key]: color || '#000000' });
+      await redis.set(authKey, password);
+      await redis.sadd('all_users', nickname); // Добавляем в список всех юзеров
     }
+
+    const isAdmin = nickname.toLowerCase() === 'admin';
+
+    // --- АДМИН-ФУНКЦИИ ---
+    if (isAdmin) {
+      if (action === 'ban') {
+        await redis.sadd('banned_users', targetId);
+        return NextResponse.json({ ok: true, message: 'User banned' });
+      }
+      if (action === 'get_users') {
+        const users = await redis.smembers('all_users');
+        const banned = await redis.smembers('banned_users');
+        return NextResponse.json({ users, banned });
+      }
+    }
+
+    // --- ОБЫЧНОЕ РИСОВАНИЕ ---
+    const isBanned = await redis.sismember('banned_users', userId);
+    if (isBanned) return NextResponse.json({ error: 'Banned' }, { status: 403 });
+
+    const key = `${x}-${y}`;
+    const pixelData = JSON.stringify({ color, user: nickname, userId });
+    await redis.hset('board', { [key]: pixelData });
 
     return NextResponse.json({ ok: true });
   } catch (e) {
