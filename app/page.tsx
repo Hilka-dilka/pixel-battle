@@ -10,12 +10,12 @@ export default function Home() {
   const [canClick, setCanClick] = useState(true);
   const [hoveredInfo, setHoveredInfo] = useState<any>(null);
   
-  // Админ-состояния
   const [adminData, setAdminData] = useState<{users: string[], banned: string[]}>({users: [], banned: []});
   const [banInput, setBanInput] = useState('');
   const isAdmin = auth.nick.toLowerCase() === 'admin';
 
-  const size = 30;
+  const size = 30; // 30x30 пикселей
+  const cellSize = 20; // Размер одного пикселя в браузере (в px)
 
   useEffect(() => {
     const savedNick = localStorage.getItem('p_nick');
@@ -37,7 +37,7 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    if (!canClick && !isAdmin) { // Админу кулдаун не нужен
+    if (!canClick && !isAdmin) {
       const timer = setInterval(() => {
         setCooldown(p => {
           if (p >= 100) { clearInterval(timer); setCanClick(true); return 100; }
@@ -88,21 +88,14 @@ export default function Home() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', backgroundColor: '#121212', color: '#fff', minHeight: '100vh', padding: '20px', fontFamily: 'sans-serif' }}>
       
-      {/* ПАНЕЛЬ АДМИНА */}
       {isAdmin && (
         <div style={{ position: 'fixed', right: 10, top: 50, width: '200px', background: '#1e1e1e', padding: '15px', borderRadius: '10px', border: '2px solid gold', fontSize: '12px', zIndex: 1000 }}>
           <h3 style={{ color: 'gold', margin: '0 0 10px 0' }}>ADMIN PANEL</h3>
           <button onClick={() => adminAction('get_users')} style={{ width: '100%', marginBottom: '5px' }}>Обновить списки</button>
-          <div style={{ maxHeight: '100px', overflow: 'auto', marginBottom: '10px', border: '1px solid #333' }}>
-            <b>Юзеры:</b> {adminData.users.join(', ')}
-          </div>
-          <input placeholder="ID для бана" value={banInput} onChange={e => setBanInput(e.target.value)} style={{ width: '100%', marginBottom: '5px', fontSize: '10px' }} />
+          <input placeholder="ID для бана" value={banInput} onChange={e => setBanInput(e.target.value)} style={{ width: '100%', marginBottom: '5px' }} />
           <button onClick={() => adminAction('ban')} style={{ width: '100%', backgroundColor: 'red', color: '#fff' }}>ЗАБАНИТЬ</button>
-          <div style={{ marginTop: '10px' }}>
-            <b>Свой цвет:</b>
-            <input type="text" placeholder="#ffffff" onChange={e => setSelectedColor(e.target.value)} style={{ width: '100%', background: '#000', color: '#fff', border: '1px solid #555' }} />
-          </div>
-          <p style={{ color: 'gold', marginTop: '10px' }}>⚡ God Mode ON</p>
+          <input type="text" placeholder="HEX Цвет: #ffffff" onChange={e => setSelectedColor(e.target.value)} style={{ width: '100%', marginTop: '10px', background: '#000', color: '#fff' }} />
+          <p style={{ color: 'gold' }}>⚡ God Mode ON</p>
         </div>
       )}
 
@@ -110,35 +103,62 @@ export default function Home() {
         Привет, {auth.nick}! <button onClick={() => {localStorage.clear(); location.reload();}}>Выход</button>
       </div>
 
-      <h1>PIXEL BATTLE</h1>
+      <h1 style={{ letterSpacing: '3px' }}>PIXEL BATTLE</h1>
 
       {!isAdmin && (
-        <div style={{ width: '300px', height: '6px', backgroundColor: '#333', marginBottom: '20px' }}>
-          <div style={{ width: `${cooldown}%`, height: '100%', backgroundColor: '#4CAF50' }} />
+        <div style={{ width: '300px', height: '8px', backgroundColor: '#333', marginBottom: '20px', borderRadius: '4px', overflow: 'hidden' }}>
+          <div style={{ width: `${cooldown}%`, height: '100%', backgroundColor: '#4CAF50', transition: 'width 0.1s linear' }} />
         </div>
       )}
 
-      <div style={{ display: 'flex', gap: '5px', marginBottom: '20px' }}>
+      <div style={{ display: 'flex', gap: '8px', marginBottom: '20px' }}>
         {['#000000', '#808080', '#ffffff', '#ff0000'].map(c => (
-          <div key={c} onClick={() => setSelectedColor(c)} style={{ width: '30px', height: '30px', backgroundColor: c, border: selectedColor === c ? '2px solid gold' : '1px solid #333', cursor: 'pointer' }} />
+          <div key={c} onClick={() => setSelectedColor(c)} style={{ 
+            width: '35px', height: '35px', backgroundColor: c, 
+            border: selectedColor === c ? '3px solid gold' : '1px solid #555', 
+            cursor: 'pointer', borderRadius: '5px' 
+          }} />
         ))}
       </div>
 
-      <div style={{ position: 'relative', display: 'grid', gridTemplateColumns: `repeat(${size}, 18px)`, backgroundColor: '#e0e0e0', gap: '0.5px' }}>
+      {/* ИСПРАВЛЕННАЯ СЕТКА */}
+      <div style={{ 
+        position: 'relative', 
+        display: 'grid', 
+        gridTemplateColumns: `repeat(${size}, ${cellSize}px)`, // Фиксированный размер колонки
+        gridTemplateRows: `repeat(${size}, ${cellSize}px)`,    // Фиксированный размер строки
+        backgroundColor: '#333', // Цвет сетки (линий)
+        gap: '1px',             // Толщина линии сетки
+        border: '2px solid #444',
+        boxShadow: '0 0 30px rgba(0,0,0,0.5)'
+      }}>
         {Array.from({ length: size * size }).map((_, i) => {
           const x = i % size; const y = Math.floor(i / size);
           const data = pixels[`${x}-${y}`];
           return (
-            <div key={i} onClick={() => clickPixel(x, y)}
+            <div 
+              key={i} 
+              onClick={() => clickPixel(x, y)}
               onMouseEnter={() => data && setHoveredInfo({ ...data, x, y })}
               onMouseLeave={() => setHoveredInfo(null)}
-              style={{ width: '18px', height: '18px', backgroundColor: data?.color || '#ffffff', cursor: 'crosshair' }}
+              style={{ 
+                width: `${cellSize}px`, 
+                height: `${cellSize}px`, 
+                backgroundColor: data?.color || '#ffffff', 
+                cursor: canClick || isAdmin ? 'crosshair' : 'wait'
+              }}
             />
           );
         })}
+
+        {/* Инфо при наведении */}
         {hoveredInfo && (
-          <div style={{ position: 'absolute', top: -80, left: '50%', transform: 'translateX(-50%)', backgroundColor: '#333', padding: '10px', borderRadius: '5px', zIndex: 100 }}>
-            👤 {hoveredInfo.user} <br/> 🆔 {hoveredInfo.userId} <br/> 🎨 {hoveredInfo.color}
+          <div style={{ 
+            position: 'absolute', top: -70, left: '50%', transform: 'translateX(-50%)', 
+            backgroundColor: '#222', color: '#fff', padding: '10px', borderRadius: '5px', 
+            fontSize: '12px', zIndex: 100, border: '1px solid gold', pointerEvents: 'none'
+          }}>
+            👤 {hoveredInfo.user} <br/> 🆔 {hoveredInfo.userId || 'unknown'} <br/> 🎨 {hoveredInfo.color}
           </div>
         )}
       </div>
