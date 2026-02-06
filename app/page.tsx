@@ -246,7 +246,7 @@ export default function Home() {
     
     hoverTimeoutRef.current = setTimeout(() => {
       setShowHoveredInfo(true);
-    }, 2000);
+    }, 500);
   };
 
   const handlePixelLeave = () => {
