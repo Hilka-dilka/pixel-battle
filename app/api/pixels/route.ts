@@ -12,7 +12,6 @@ export async function POST(req: Request) {
   try {
     const { x, y, color, nickname, password, userId, action, targetId } = await req.json();
 
-    // 1. Проверка авторизации
     const authKey = `auth:${nickname.toLowerCase()}`;
     const savedPassword = await redis.get(authKey);
     
@@ -20,16 +19,19 @@ export async function POST(req: Request) {
       if (savedPassword !== password) return NextResponse.json({ error: 'Wrong password' }, { status: 401 });
     } else {
       await redis.set(authKey, password);
-      await redis.sadd('all_users', nickname); // Добавляем в список всех юзеров
+      await redis.sadd('all_users', nickname);
     }
 
     const isAdmin = nickname.toLowerCase() === 'admin';
 
-    // --- АДМИН-ФУНКЦИИ ---
     if (isAdmin) {
       if (action === 'ban') {
         await redis.sadd('banned_users', targetId);
-        return NextResponse.json({ ok: true, message: 'User banned' });
+        return NextResponse.json({ ok: true });
+      }
+      if (action === 'clear_all') {
+        await redis.del('board'); // УДАЛЯЕТ ВСЕ ПИКСЕЛИ
+        return NextResponse.json({ ok: true });
       }
       if (action === 'get_users') {
         const users = await redis.smembers('all_users');
@@ -38,7 +40,6 @@ export async function POST(req: Request) {
       }
     }
 
-    // --- ОБЫЧНОЕ РИСОВАНИЕ ---
     const isBanned = await redis.sismember('banned_users', userId);
     if (isBanned) return NextResponse.json({ error: 'Banned' }, { status: 403 });
 
