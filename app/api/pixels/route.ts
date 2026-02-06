@@ -4,7 +4,7 @@ import Pusher from 'pusher';
 
 const redis = Redis.fromEnv();
 
-// Инициализация Pusher с проверкой ключей
+// Твои ключи вписаны напрямую
 const pusher = new Pusher({
   appId: "2112054",
   key: "428b10fa704e1012072a",
@@ -24,44 +24,50 @@ export async function GET() {
 
 export async function POST(req: Request) {
   try {
-    const { x, y, color, nickname, password, userId, action } = await req.json();
+    const { x, y, color, nickname, password, userId, action, targetId } = await req.json();
 
-    // Проверка ника и пароля
     const authKey = `auth:${nickname.toLowerCase()}`;
     const savedPassword = await redis.get(authKey);
-    if (savedPassword && savedPassword !== password) return NextResponse.json({ error: 'Auth' }, { status: 401 });
-    if (!savedPassword) await redis.set(authKey, password);
+    
+    if (savedPassword) {
+      if (savedPassword !== password) return NextResponse.json({ error: 'Auth' }, { status: 401 });
+    } else {
+      await redis.set(authKey, password);
+      await redis.sadd('all_users', nickname); // Регистрация ника
+    }
 
     const isAdmin = nickname.toLowerCase() === 'admin';
 
-    // Очистка полотна (только для админа)
-    if (isAdmin && action === 'clear_all') {
-      await redis.del('board');
-      await pusher.trigger('pixel-channel', 'clear', {});
-      return NextResponse.json({ ok: true });
+    // АДМИН-ЛОГИКА
+    if (isAdmin) {
+      if (action === 'clear_all') {
+        await redis.del('board');
+        await pusher.trigger('pixel-channel', 'clear', {});
+        return NextResponse.json({ ok: true });
+      }
+      if (action === 'ban') {
+        await redis.sadd('banned_users', targetId);
+        return NextResponse.json({ ok: true });
+      }
+      if (action === 'get_users') {
+        const users = await redis.smembers('all_users');
+        const banned = await redis.smembers('banned_users');
+        return NextResponse.json({ users, banned });
+      }
     }
 
-    // Проверка бана
+    // ЛОГИКА ОБЫЧНОГО ИГРОКА
     const isBanned = await redis.sismember('banned_users', userId);
     if (isBanned) return NextResponse.json({ error: 'Banned' }, { status: 403 });
 
     const key = `${x}-${y}`;
-    const pixelData = { color, user: String(nickname), userId: String(userId) };
+    const pixelData = { color, user: nickname, userId: userId };
     
-    // 1. Сохраняем в базу как строку JSON
     await redis.hset('board', { [key]: JSON.stringify(pixelData) });
-
-    // 2. Отправляем в Pusher
-    try {
-      await pusher.trigger('pixel-channel', 'new-pixel', { key, data: pixelData });
-    } catch (pusherError) {
-      console.error("Pusher Trigger Error:", pusherError);
-      // Даже если пушер сбоит, запись в базе уже есть
-    }
+    await pusher.trigger('pixel-channel', 'new-pixel', { key, data: pixelData });
 
     return NextResponse.json({ ok: true });
   } catch (e) {
-    console.error("API POST Error:", e);
     return NextResponse.json({ ok: false }, { status: 500 });
   }
 }
