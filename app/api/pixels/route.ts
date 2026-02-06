@@ -36,15 +36,24 @@ export async function POST(req: Request) {
     const { x, y, color, nickname, password, userId, action, email, otp, targetId } = body;
 
     if (action === 'send_otp') {
+      console.log("Попытка отправить код на:", email); // Лог в консоль Vercel
+      
       const code = Math.floor(100000 + Math.random() * 900000).toString();
       await redis.set(`otp:${email}`, code, { ex: 300 });
-      await transporter.sendMail({
-        from: 'sapot1151@gmail.com',
-        to: email,
-        subject: 'Pixel Battle - Код',
-        text: `Ваш код: ${code}`,
-      });
-      return NextResponse.json({ ok: true });
+      
+      try {
+        await transporter.sendMail({
+          from: '"Pixel Battle" <sapot1151@gmail.com>',
+          to: email,
+          subject: 'Код входа в Pixel Battle',
+          text: `Ваш секретный код: ${code}`,
+        });
+        console.log("Письмо успешно отправлено!");
+        return NextResponse.json({ ok: true });
+      } catch (mailError: any) {
+        console.error("ОШИБКА ОТПРАВКИ ПОЧТЫ:", mailError.message);
+        return NextResponse.json({ ok: false, error: mailError.message }, { status: 500 });
+      }
     }
 
     if (action === 'verify_otp') {
