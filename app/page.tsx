@@ -2,84 +2,92 @@
 import { useEffect, useState } from 'react';
 
 export default function Home() {
-  // Тут хранятся закрашенные пиксели
-  const [pixels, setPixels] = useState<Record<string, number>>({});
-  
-  // Размер сетки (30 на 30 пикселей)
-  const size = 30; 
+  const [pixels, setPixels] = useState<Record<string, any>>({});
+  const [tool, setTool] = useState<'draw' | 'erase'>('draw'); // draw или erase
+  const size = 30;
 
-  // 1. Загружаем пиксели из базы при открытии сайта
   useEffect(() => {
-    fetch('/api/pixels')
-      .then((res) => res.json())
-      .then((data) => {
-        if (data) setPixels(data);
-      })
-      .catch(err => console.error("Ошибка загрузки:", err));
+    fetch('/api/pixels').then((res) => res.json()).then((data) => setPixels(data || {}));
   }, []);
 
-  // 2. Функция при клике на клетку
   const clickPixel = async (x: number, y: number) => {
     const key = `${x}-${y}`;
     
-    // Если пиксель уже черный, ничего не делаем
-    if (pixels[key]) return;
+    // Новое состояние пикселей для экрана
+    const newPixels = { ...pixels };
 
-    // Сразу красим в черный в браузере (чтобы не тупило)
-    setPixels((prev) => ({ ...prev, [key]: 1 }));
+    if (tool === 'draw') {
+      if (pixels[key]) return;
+      newPixels[key] = 1;
+    } else {
+      if (!pixels[key]) return;
+      delete newPixels[key];
+    }
 
-    // Отправляем запрос в базу данных
+    setPixels(newPixels); // Сразу обновляем экран
+
+    // Отправляем запрос на сервер с указанием действия
     await fetch('/api/pixels', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ x, y }),
+      body: JSON.stringify({ x, y, action: tool }),
     });
   };
 
   return (
-    <div style={{ 
-      display: 'flex', 
-      flexDirection: 'column', 
-      alignItems: 'center', 
-      justifyContent: 'center',
-      minHeight: '100vh', 
-      backgroundColor: '#f5f5f5',
-      fontFamily: 'sans-serif' 
-    }}>
-      <h1 style={{ marginBottom: '20px' }}>Pixel Battle</h1>
-      
-      {/* Сетка игры */}
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', backgroundColor: '#f5f5f5', minHeight: '100vh', padding: '20px' }}>
+      <h1>Pixel Battle</h1>
+
+      {/* Панель инструментов */}
+      <div style={{ marginBottom: '20px', display: 'flex', gap: '10px' }}>
+        <button 
+          onClick={() => setTool('draw')}
+          style={{
+            padding: '10px 20px', fontSize: '20px', cursor: 'pointer',
+            backgroundColor: tool === 'draw' ? '#000' : '#fff',
+            color: tool === 'draw' ? '#fff' : '#000',
+            border: '2px solid #000', borderRadius: '8px'
+          }}
+        >
+          ✏️ Карандаш
+        </button>
+        <button 
+          onClick={() => setTool('erase')}
+          style={{
+            padding: '10px 20px', fontSize: '20px', cursor: 'pointer',
+            backgroundColor: tool === 'erase' ? '#000' : '#fff',
+            color: tool === 'erase' ? '#fff' : '#000',
+            border: '2px solid #000', borderRadius: '8px'
+          }}
+        >
+          🧼 Ластик
+        </button>
+      </div>
+
+      {/* Сетка */}
       <div style={{ 
         display: 'grid', 
-        gridTemplateColumns: `repeat(${size}, 15px)`, // 15px - размер одного пикселя
-        gap: '1px', 
-        backgroundColor: '#ddd', // Цвет линий сетки
-        border: '2px solid #333' 
+        gridTemplateColumns: `repeat(${size}, 15px)`,
+        backgroundColor: '#fff', border: '2px solid #333'
       }}>
         {Array.from({ length: size * size }).map((_, i) => {
           const x = i % size;
           const y = Math.floor(i / size);
           const isBlack = pixels[`${x}-${y}`];
-
           return (
             <div
               key={i}
               onClick={() => clickPixel(x, y)}
               style={{
-                width: '15px',
-                height: '15px',
-                backgroundColor: isBlack ? '#000' : '#fff',
-                cursor: 'pointer',
-                transition: 'background 0.2s'
+                width: '15px', height: '15px',
+                border: '0.5px solid #eee',
+                backgroundColor: isBlack ? 'black' : 'white',
+                cursor: tool === 'draw' ? 'crosshair' : 'not-allowed'
               }}
             />
           );
         })}
       </div>
-
-      <p style={{ marginTop: '20px', color: '#666' }}>
-        Кликни на клетку, чтобы закрасить её навсегда!
-      </p>
     </div>
   );
 }
