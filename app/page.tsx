@@ -26,6 +26,7 @@ export default function Home() {
   const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
   const canvasRef = useRef<HTMLDivElement>(null);
   const hoverTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const lastClickTimeRef = useRef<number>(0);
 
   const size = 60;
   const cellSize = 20;
@@ -142,19 +143,23 @@ export default function Home() {
   };
 
   // Обработчики для перемещения полотна (для всех)
-  const handleMouseDown = (e: React.MouseEvent) => {
+  const handleCanvasMouseDown = (e: React.MouseEvent) => {
     if (e.button === 0) { // ЛКМ
-      // Для обычных игроков - только перемещение, не рисование при зажатии
-      // Для админа - рисование только при зажатом пробеле
-      if (!isAdmin || !isSpaceDown) {
+      // Проверяем, не был ли это быстрый двойной клик (для рисования)
+      const now = Date.now();
+      const timeSinceLastClick = now - lastClickTimeRef.current;
+      
+      // Если это был очень быстрый клик (менее 300мс), возможно это был клик по пикселю
+      if (timeSinceLastClick > 300) {
+        // Это начало перемещения
         setIsDragging(true);
         setDragStart({ x: e.clientX - offset.x, y: e.clientY - offset.y });
-        return;
+        e.preventDefault();
       }
     }
   };
 
-  const handleMouseMove = (e: React.MouseEvent) => {
+  const handleCanvasMouseMove = (e: React.MouseEvent) => {
     if (isDragging) {
       setOffset({
         x: e.clientX - dragStart.x,
@@ -163,8 +168,10 @@ export default function Home() {
     }
   };
 
-  const handleMouseUp = () => {
-    setIsDragging(false);
+  const handleCanvasMouseUp = () => {
+    if (isDragging) {
+      setIsDragging(false);
+    }
   };
 
   const handleWheel = (e: React.WheelEvent) => {
@@ -201,6 +208,10 @@ export default function Home() {
   // Клик по пикселю (только по клику, не при зажатии)
   const handlePixelClick = (e: React.MouseEvent, x: number, y: number) => {
     e.preventDefault();
+    e.stopPropagation();
+    
+    // Записываем время клика для предотвращения случайного рисования при перемещении
+    lastClickTimeRef.current = Date.now();
     
     // Для админа - только при зажатом пробеле
     // Для обычных игроков - всегда при клике
@@ -320,68 +331,48 @@ export default function Home() {
         </button>
       </div>
 
-      {/* ОБЛАСТЬ С ПОЛОТНОМ */}
-      <div 
-        ref={canvasRef}
-        data-canvas="true"
-        style={{ 
-          position: 'absolute',
-          top: '50%',
-          left: '50%',
-          transform: `translate(calc(-50% + ${offset.x}px), calc(-50% + ${offset.y}px)) scale(${scale})`,
-          cursor: isDragging ? 'grabbing' : 'grab',
-          transition: isDragging ? 'none' : 'transform 0.1s ease',
-          zIndex: 1
-        }}
-        onMouseDown={handleMouseDown}
-        onMouseMove={handleMouseMove}
-        onMouseUp={handleMouseUp}
-        onMouseLeave={handleMouseUp}
-        onWheel={handleWheel}
-      >
-        {/* СЕТКА ПИКСЕЛЕЙ */}
+      {/* КУЛДАУН БАР (ТОЛЬКО ДЛЯ ОБЫЧНЫХ ИГРОКОВ) - ПОДНЯТ ВЫШЕ */}
+      {!isAdmin && (
         <div style={{ 
-          display: 'grid', 
-          gridTemplateColumns: `repeat(${size}, ${cellSize}px)`, 
-          gridTemplateRows: `repeat(${size}, ${cellSize}px)`, 
-          backgroundColor: '#333', 
-          gap: '1px', 
-          border: '2px solid #444',
-          boxShadow: '0 8px 24px rgba(0,0,0,0.8)'
+          position: 'fixed', 
+          bottom: '170px', // Поднят выше над палитрой
+          left: '50%', 
+          transform: 'translateX(-50%)',
+          width: '300px', 
+          height: '8px', 
+          backgroundColor: '#222', 
+          borderRadius: '4px', 
+          overflow: 'hidden',
+          zIndex: 2000,
+          border: '1px solid #333',
+          boxShadow: '0 3px 10px rgba(0,0,0,0.5)'
         }}>
-          {Array.from({ length: size * size }).map((_, i) => {
-            const x = i % size; 
-            const y = Math.floor(i / size);
-            const data = pixels[`${x}-${y}`];
-
-            return (
-              <div 
-                key={i} 
-                onClick={(e) => handlePixelClick(e, x, y)}
-                onMouseEnter={() => { 
-                  // Для админа - рисование при зажатом пробеле и наведении
-                  if (isAdmin && isSpaceDown) {
-                    clickPixel(x, y);
-                  }
-                  if (data) handlePixelEnter({ ...data, x, y });
-                }}
-                onMouseLeave={handlePixelLeave}
-                style={{ 
-                  width: `${cellSize}px`, 
-                  height: `${cellSize}px`, 
-                  backgroundColor: data?.color || '#ffffff', 
-                  cursor: (isAdmin && isSpaceDown) ? 'crosshair' : 'pointer'
-                }}
-              />
-            );
-          })}
+          <div style={{ 
+            width: `${cooldown}%`, 
+            height: '100%', 
+            backgroundColor: cooldown === 100 ? '#4CAF50' : '#FF9800',
+            transition: 'width 0.1s linear, background-color 0.3s ease'
+          }} />
+          <div style={{
+            position: 'absolute',
+            top: '-22px',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            fontSize: '12px',
+            color: cooldown === 100 ? '#4CAF50' : '#FF9800',
+            whiteSpace: 'nowrap',
+            fontWeight: 'bold',
+            textShadow: '0 1px 2px rgba(0,0,0,0.8)'
+          }}>
+            {cooldown === 100 ? '✅ Готов к рисованию' : `⏳ Ожидание: ${cooldown}%`}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* ПАЛИТРА ЦВЕТОВ (ФИКСИРОВАННАЯ СНИЗУ) */}
       <div style={{ 
         position: 'fixed', 
-        bottom: '70px', 
+        bottom: '100px', // Поднята немного выше от края
         left: '50%', 
         transform: 'translateX(-50%)',
         display: 'flex', 
@@ -430,41 +421,63 @@ export default function Home() {
         ))}
       </div>
 
-      {/* КУЛДАУН БАР (ТОЛЬКО ДЛЯ ОБЫЧНЫХ ИГРОКОВ) */}
-      {!isAdmin && (
+      {/* ОБЛАСТЬ С ПОЛОТНОМ */}
+      <div 
+        ref={canvasRef}
+        data-canvas="true"
+        style={{ 
+          position: 'absolute',
+          top: '50%',
+          left: '50%',
+          transform: `translate(calc(-50% + ${offset.x}px), calc(-50% + ${offset.y}px)) scale(${scale})`,
+          cursor: isDragging ? 'grabbing' : 'grab',
+          transition: isDragging ? 'none' : 'transform 0.1s ease',
+          zIndex: 1
+        }}
+        onMouseDown={handleCanvasMouseDown}
+        onMouseMove={handleCanvasMouseMove}
+        onMouseUp={handleCanvasMouseUp}
+        onMouseLeave={handleCanvasMouseUp}
+        onWheel={handleWheel}
+      >
+        {/* СЕТКА ПИКСЕЛЕЙ */}
         <div style={{ 
-          position: 'fixed', 
-          bottom: '130px', 
-          left: '50%', 
-          transform: 'translateX(-50%)',
-          width: '300px', 
-          height: '8px', 
-          backgroundColor: '#222', 
-          borderRadius: '4px', 
-          overflow: 'hidden',
-          zIndex: 2000,
-          border: '1px solid #333',
-          boxShadow: '0 3px 10px rgba(0,0,0,0.5)'
+          display: 'grid', 
+          gridTemplateColumns: `repeat(${size}, ${cellSize}px)`, 
+          gridTemplateRows: `repeat(${size}, ${cellSize}px)`, 
+          backgroundColor: '#333', 
+          gap: '1px', 
+          border: '2px solid #444',
+          boxShadow: '0 8px 24px rgba(0,0,0,0.8)'
         }}>
-          <div style={{ 
-            width: `${cooldown}%`, 
-            height: '100%', 
-            backgroundColor: cooldown === 100 ? '#4CAF50' : '#FF9800',
-            transition: 'width 0.1s linear, background-color 0.3s ease'
-          }} />
-          <div style={{
-            position: 'absolute',
-            top: '-20px',
-            left: '50%',
-            transform: 'translateX(-50%)',
-            fontSize: '11px',
-            color: cooldown === 100 ? '#4CAF50' : '#FF9800',
-            whiteSpace: 'nowrap'
-          }}>
-            {cooldown === 100 ? 'Готово' : `Ожидание: ${cooldown}%`}
-          </div>
+          {Array.from({ length: size * size }).map((_, i) => {
+            const x = i % size; 
+            const y = Math.floor(i / size);
+            const data = pixels[`${x}-${y}`];
+
+            return (
+              <div 
+                key={i} 
+                onClick={(e) => handlePixelClick(e, x, y)}
+                onMouseEnter={() => { 
+                  // Для админа - рисование при зажатом пробеле и наведении
+                  if (isAdmin && isSpaceDown) {
+                    clickPixel(x, y);
+                  }
+                  if (data) handlePixelEnter({ ...data, x, y });
+                }}
+                onMouseLeave={handlePixelLeave}
+                style={{ 
+                  width: `${cellSize}px`, 
+                  height: `${cellSize}px`, 
+                  backgroundColor: data?.color || '#ffffff', 
+                  cursor: (isAdmin && isSpaceDown) ? 'crosshair' : 'pointer'
+                }}
+              />
+            );
+          })}
         </div>
-      )}
+      </div>
 
       {/* TOOLTIP С ИНФОРМАЦИЕЙ (ПОЯВЛЯЕТСЯ У КУРСОРА С ЗАДЕРЖКОЙ) */}
       {showHoveredInfo && hoveredInfo && (
@@ -508,9 +521,7 @@ export default function Home() {
         </div>
       )}
 
-      
 
-      
       <style jsx global>{`
         @keyframes fadeIn {
           from { opacity: 0; transform: translateY(-10px); }
