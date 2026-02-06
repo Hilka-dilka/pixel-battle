@@ -136,52 +136,74 @@ export default function Home() {
   }, [isAdmin]);
 
   // Загрузка статистики игроков
-  const loadPlayerStats = async () => {
-    try {
-      const res = await fetch('/api/pixels', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-  nickname: auth.nick, 
-  password: auth.pass,
-  action: isAdmin ? 'get_users' : 'get_stats'  // ← вот эта строка
-}),
-
-      });
+  // Загрузка статистики игроков (для всех пользователей)
+const loadPlayerStats = async () => {
+  setLoadingStats(true);
+  try {
+    const res = await fetch('/api/pixels', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ 
+        nickname: auth.nick, 
+        password: auth.pass,
+        action: isAdmin ? 'get_users' : 'get_stats' 
+      }),
+    });
+    
+    if (res.ok) {
+      const data = await res.json();
       
-      if (res.ok) {
-        const data = await res.json();
-        if (data.userStats && data.onlineUsers) {
-          setAdminData(data);
-          
-          // Формируем статистику игроков
-          const stats: PlayerStats[] = [];
-          const allUsers = new Set([
-            ...data.users,
-            ...Object.keys(data.userStats),
-            ...data.onlineUsers
-          ]);
-          
-          allUsers.forEach(user => {
-            if (user && user !== 'admin') {
-              stats.push({
-                nickname: user,
-                pixelsCount: data.userStats[user] || 0,
-                isOnline: data.onlineUsers.includes(user)
-              });
-            }
-          });
-          
-          // Сортируем по количеству пикселей (по убыванию)
-          stats.sort((a, b) => b.pixelsCount - a.pixelsCount);
-          setPlayerStats(stats);
-          setOnlineCount(data.onlineUsers.length);
-        }
+      // Для админа сохраняем полные данные
+      if (isAdmin) {
+        setAdminData({
+          users: data.users || [],
+          banned: data.banned || [],
+          userStats: data.userStats || {},
+          onlineUsers: data.onlineUsers || []
+        });
       }
-    } catch (error) {
-      console.error('Failed to load player stats:', error);
+      
+      // Для всех пользователей формируем статистику
+      const userStats = data.userStats || {};
+      const onlineUsers = data.onlineUsers || [];
+      
+      // Собираем всех пользователей из разных источников
+      const allUsersSet = new Set<string>();
+      
+      // Добавляем пользователей из userStats
+      Object.keys(userStats).forEach(user => allUsersSet.add(user));
+      
+      // Добавляем онлайн пользователей
+      onlineUsers.forEach(user => allUsersSet.add(user));
+      
+      // Для админа добавляем всех зарегистрированных пользователей
+      if (isAdmin && data.users) {
+        data.users.forEach(user => allUsersSet.add(user));
+      }
+      
+      // Формируем статистику игроков
+      const stats: PlayerStats[] = Array.from(allUsersSet)
+        .filter(user => user && user !== 'admin')
+        .map(user => ({
+          nickname: user,
+          pixelsCount: userStats[user] || 0,
+          isOnline: onlineUsers.includes(user)
+        }));
+      
+      // Сортируем по количеству пикселей (по убыванию)
+      stats.sort((a, b) => b.pixelsCount - a.pixelsCount);
+      setPlayerStats(stats);
+      setOnlineCount(onlineUsers.length);
+    } else {
+      const errorData = await res.json().catch(() => ({}));
+      console.error('Failed to load stats:', errorData);
     }
-  };
+  } catch (error) {
+    console.error('Failed to load player stats:', error);
+  } finally {
+    setLoadingStats(false);
+  }
+};
 
   // Автоматическое обновление статистики
   useEffect(() => {
