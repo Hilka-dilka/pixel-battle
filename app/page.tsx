@@ -515,7 +515,7 @@ export default function Home() {
   const handleWheel = (e: React.WheelEvent) => {
     e.preventDefault();
     const delta = e.deltaY > 0 ? 0.9 : 1.1;
-    const newScale = Math.max(0.5, Math.min(3, scale * delta));
+    const newScale = Math.max(0.1, Math.min(10, scale * delta));
     setScale(newScale);
   };
 
