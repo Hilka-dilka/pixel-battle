@@ -51,14 +51,120 @@ export default function Home() {
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
   const canvasRef = useRef<HTMLDivElement>(null);
+  const canvasElementRef = useRef<HTMLCanvasElement>(null);
   const hoverTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const statsRefreshRef = useRef<NodeJS.Timeout | null>(null);
   
   const dragStartPosRef = useRef<{x: number, y: number} | null>(null);
   const isClickActionRef = useRef<boolean>(true);
-
   const size = 90;
-  const cellSize = 20;
+  const pixelScale = 10;
+
+  const drawCanvas = () => {
+    const canvas = canvasElementRef.current;
+    if (!canvas) return;
+    
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    
+    // Clear canvas
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, size * pixelScale, size * pixelScale);
+    
+    // Draw all pixels
+    for (const key in pixels) {
+      const [x, y] = key.split('-').map(Number);
+      ctx.fillStyle = pixels[key].color || '#ffffff';
+      ctx.fillRect(x * pixelScale, y * pixelScale, pixelScale, pixelScale);
+    }
+  };
+
+  // Redraw canvas when pixels change
+  useEffect(() => {
+    drawCanvas();
+  }, [pixels]);
+
+  const downloadCanvas = () => {
+    const canvas = canvasElementRef.current;
+    if (!canvas) return;
+    
+    // Create a temporary canvas without grid
+    const tempCanvas = document.createElement('canvas');
+    tempCanvas.width = size * pixelScale;
+    tempCanvas.height = size * pixelScale;
+    const tempCtx = tempCanvas.getContext('2d');
+    if (!tempCtx) return;
+    
+    // Fill white background
+    tempCtx.fillStyle = '#ffffff';
+    tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
+    
+    // Draw pixels
+    for (const key in pixels) {
+      const [x, y] = key.split('-').map(Number);
+      tempCtx.fillStyle = pixels[key].color || '#ffffff';
+      tempCtx.fillRect(x * pixelScale, y * pixelScale, pixelScale, pixelScale);
+    }
+    
+    // Download
+    const link = document.createElement('a');
+    link.download = 'pixel-battle.png';
+    link.href = tempCanvas.toDataURL('image/png');
+    link.click();
+  };
+
+  const handleCanvasClick = (e: React.MouseEvent) => {
+    if (!isClickActionRef.current) return;
+    
+    const canvas = canvasElementRef.current;
+    if (!canvas) return;
+    
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    
+    const clickX = (e.clientX - rect.left) * scaleX;
+    const clickY = (e.clientY - rect.top) * scaleY;
+    
+    const x = Math.floor(clickX / pixelScale);
+    const y = Math.floor(clickY / pixelScale);
+    
+    if (x >= 0 && x < size && y >= 0 && y < size) {
+      handlePixelClick(e as any, x, y);
+    }
+  };
+
+  const handlePixelCanvasMouseMove = (e: React.MouseEvent) => {
+    const canvas = canvasElementRef.current;
+    if (!canvas) return;
+    
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    
+    const mouseX = (e.clientX - rect.left) * scaleX;
+    const mouseY = (e.clientY - rect.top) * scaleY;
+    
+    const x = Math.floor(mouseX / pixelScale);
+    const y = Math.floor(mouseY / pixelScale);
+    
+    if (x >= 0 && x < size && y >= 0 && y < size) {
+      const data = pixels[`${x}-${y}`];
+      if (data) {
+        handlePixelEnter({ ...data, x, y });
+      } else {
+        handlePixelLeave();
+      }
+      
+      if (isAdmin && isSpaceDown) {
+        clickPixel(x, y);
+      }
+    }
+  };
+
+  const handlePixelCanvasMouseLeave = () => {
+    handlePixelLeave();
+  };
 
   const loadChatMessages = async () => {
     // Всегда пытаемся загрузить с сервера
@@ -729,6 +835,21 @@ export default function Home() {
           </button>
           
           <button 
+            onClick={downloadCanvas}
+            style={{
+              fontSize: '11px', 
+              padding: '6px 10px',
+              backgroundColor: '#333',
+              border: '1px solid #FFD700',
+              borderRadius: '4px',
+              color: '#FFD700',
+              cursor: 'pointer'
+            }}
+            title="Скачать как PNG"
+          >
+            💾
+          </button>
+          <button 
             onClick={() => {localStorage.clear(); location.reload();}} 
             style={{
               fontSize: '11px', 
@@ -1082,41 +1203,32 @@ export default function Home() {
         }}
         onWheel={handleWheel}
       >
-        <div style={{ 
-          display: 'grid', 
-          gridTemplateColumns: `repeat(${size}, ${cellSize}px)`, 
-          gridTemplateRows: `repeat(${size}, ${cellSize}px)`, 
-          backgroundColor: '#333', 
-          gap: '1px', 
-          border: '2px solid #444',
-          boxShadow: '0 8px 24px rgba(0,0,0,0.8)'
-        }}>
-          {Array.from({ length: size * size }).map((_, i) => {
-            const x = i % size; 
-            const y = Math.floor(i / size);
-            const data = pixels[`${x}-${y}`];
-
-            return (
-              <div 
-                key={i} 
-                onClick={(e) => handlePixelClick(e, x, y)}
-                onMouseEnter={() => { 
-                  if (isAdmin && isSpaceDown) {
-                    clickPixel(x, y);
-                  }
-                  if (data) handlePixelEnter({ ...data, x, y });
-                }}
-                onMouseLeave={handlePixelLeave}
-                style={{ 
-                  width: `${cellSize}px`, 
-                  height: `${cellSize}px`, 
-                  backgroundColor: data?.color || '#ffffff', 
-                  cursor: (isAdmin && isSpaceDown) ? 'crosshair' : 'pointer'
-                }}
-              />
-            );
-          })}
-        </div>
+        <canvas
+          ref={canvasElementRef}
+          width={size * pixelScale}
+          height={size * pixelScale}
+          onClick={handleCanvasClick}
+          onMouseMove={handlePixelCanvasMouseMove}
+          onMouseLeave={handlePixelCanvasMouseLeave}
+          style={{
+            display: 'block',
+            cursor: (isAdmin && isSpaceDown) ? 'crosshair' : 'pointer'
+          }}
+        />
+        {/* Grid overlay */}
+        <div style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          width: '100%',
+          height: '100%',
+          pointerEvents: 'none',
+          backgroundImage: `
+            linear-gradient(to right, rgba(0,0,0,0.2) 1px, transparent 1px),
+            linear-gradient(to bottom, rgba(0,0,0,0.2) 1px, transparent 1px)
+          `,
+          backgroundSize: `${pixelScale}px ${pixelScale}px`
+        }} />
       </div>
 
       {showHoveredInfo && hoveredInfo && (
