@@ -36,6 +36,8 @@ export default function Home() {
   
   const [chatOpen, setChatOpen] = useState(false);
   const [statsOpen, setStatsOpen] = useState(false);
+  const [canvasVisible, setCanvasVisible] = useState(true);
+  const [hoveredPixel, setHoveredPixel] = useState<{x: number, y: number} | null>(null);
   
   const [chatMessages, setChatMessages] = useState<{nickname: string, text: string, time: string}[]>([]);
   const [chatInput, setChatInput] = useState('');
@@ -57,7 +59,8 @@ export default function Home() {
   
   const dragStartPosRef = useRef<{x: number, y: number} | null>(null);
   const isClickActionRef = useRef<boolean>(true);
-  const size = 90;
+  const sizeX = 90;
+  const sizeY = 90;
   const pixelScale = 10;
 
   const drawCanvas = () => {
@@ -69,7 +72,7 @@ export default function Home() {
     
     // Clear canvas
     ctx.fillStyle = '#ffffff';
-    ctx.fillRect(0, 0, size * pixelScale, size * pixelScale);
+    ctx.fillRect(0, 0, sizeX * pixelScale, sizeY * pixelScale);
     
     // Draw all pixels
     for (const key in pixels) {
@@ -90,8 +93,8 @@ export default function Home() {
     
     // Create a temporary canvas without grid
     const tempCanvas = document.createElement('canvas');
-    tempCanvas.width = size * pixelScale;
-    tempCanvas.height = size * pixelScale;
+    tempCanvas.width = sizeX * pixelScale;
+    tempCanvas.height = sizeY * pixelScale;
     const tempCtx = tempCanvas.getContext('2d');
     if (!tempCtx) return;
     
@@ -129,7 +132,7 @@ export default function Home() {
     const x = Math.floor(clickX / pixelScale);
     const y = Math.floor(clickY / pixelScale);
     
-    if (x >= 0 && x < size && y >= 0 && y < size) {
+    if (x >= 0 && x < sizeX && y >= 0 && y < sizeY) {
       handlePixelClick(e as any, x, y);
     }
   };
@@ -148,7 +151,8 @@ export default function Home() {
     const x = Math.floor(mouseX / pixelScale);
     const y = Math.floor(mouseY / pixelScale);
     
-    if (x >= 0 && x < size && y >= 0 && y < size) {
+    if (x >= 0 && x < sizeX && y >= 0 && y < sizeY) {
+      setHoveredPixel({ x, y });
       const data = pixels[`${x}-${y}`];
       if (data) {
         handlePixelEnter({ ...data, x, y });
@@ -159,11 +163,14 @@ export default function Home() {
       if (isAdmin && isSpaceDown) {
         clickPixel(x, y);
       }
+    } else {
+      setHoveredPixel(null);
     }
   };
 
   const handlePixelCanvasMouseLeave = () => {
     handlePixelLeave();
+    setHoveredPixel(null);
   };
 
   const loadChatMessages = async () => {
@@ -225,6 +232,9 @@ export default function Home() {
           }
         }
         setPixels(parsed);
+        if (typeof data.canvasVisible === 'boolean') {
+          setCanvasVisible(data.canvasVisible);
+        }
       })
       .catch(err => console.error('Failed to load pixels:', err));
 
@@ -260,6 +270,13 @@ export default function Home() {
     channel.bind('clear_chat', () => {
       setChatMessages([]);
       localStorage.removeItem('chat_messages');
+    });
+
+    channel.bind('canvas_toggle', (update: any) => {
+      setCanvasVisible(update.visible);
+      if (!update.visible) {
+        alert('Canvas отключён админом');
+      }
     });
 
     channel.bind('user_muted', (update: any) => {
@@ -498,6 +515,9 @@ export default function Home() {
           alert('Статистика обновлена!');
         }
         if (action === 'ban') alert('Пользователь забанен!');
+        if (action === 'canvas_toggle') {
+          setCanvasVisible(data.visible);
+        }
       } else {
         if (data.error === 'Invalid admin password') {
           setAuthError('Invalid admin password');
@@ -753,6 +773,26 @@ export default function Home() {
           <input placeholder="ID для бана" value={banInput} onChange={e => setBanInput(e.target.value)} style={{ width: '100%', marginBottom: '5px', padding: '6px', background: '#222', border: '1px solid #444', color: '#fff', borderRadius: '4px' }} />
           <button onClick={() => adminAction('ban')} style={{ width: '100%', backgroundColor: '#FFD700', color: '#000', marginBottom: '10px', padding: '8px', border: 'none', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer' }}>ЗАБАНИТЬ ПО ID</button>
           <button onClick={() => { if(confirm('Очистить поле?')) adminAction('clear_all') }} style={{ width: '100%', backgroundColor: '#333', color: '#fff', padding: '8px', border: '1px solid #444', borderRadius: '4px', cursor: 'pointer', marginBottom: '10px' }}>ОЧИСТИТЬ ПОЛЕ</button>
+          
+          <div style={{ borderTop: '1px solid #444', margin: '10px 0' }} />
+          
+          <div style={{ fontSize: '10px', color: '#FFD700', marginBottom: '5px' }}>CANVAS УПРАВЛЕНИЕ</div>
+          <button 
+            onClick={() => adminAction('canvas_toggle')}
+            style={{ 
+              width: '100%', 
+              marginBottom: '5px', 
+              padding: '8px', 
+              background: canvasVisible ? '#ff4444' : '#4CAF50', 
+              border: 'none', 
+              borderRadius: '4px', 
+              color: '#fff', 
+              cursor: 'pointer',
+              fontWeight: 'bold'
+            }}
+          >
+            {canvasVisible ? '❌ ОТКЛЮЧИТЬ CANVAS' : '✅ ВКЛЮЧИТЬ CANVAS'}
+          </button>
           
           <div style={{ borderTop: '1px solid #444', margin: '10px 0' }} />
           
@@ -1138,18 +1178,18 @@ export default function Home() {
 
       <div style={{ 
         position: 'fixed', 
-        bottom: '70px',
+        bottom: '60px',
         left: '50%', 
         transform: 'translateX(-50%)',
-        padding: '10px 15px',
-        borderRadius: '10px',
+        padding: '6px 12px',
+        borderRadius: '8px',
         border: '2px solid #FFD700',
-        boxShadow: '0 6px 20px rgba(255, 215, 0, 0.3)',
+        boxShadow: '0 4px 12px rgba(255, 215, 0, 0.3)',
         display: 'flex',
-        gap: '8px',
+        gap: '6px',
         flexWrap: 'wrap',
         justifyContent: 'center',
-        maxWidth: '400px',
+        maxWidth: '360px',
         zIndex: 2000,
         backgroundColor: '#1a1a1a'
       }}>
@@ -1158,80 +1198,96 @@ export default function Home() {
             key={c} 
             onClick={() => setSelectedColor(c)} 
             style={{ 
-              width: '30px', 
-              height: '30px', 
+              width: '24px', 
+              height: '24px', 
               backgroundColor: c, 
-              border: selectedColor === c ? '3px solid #FFD700' : '2px solid #444', 
+              border: selectedColor === c ? '2px solid #FFD700' : '1px solid #444', 
               cursor: 'pointer', 
-              borderRadius: '6px',
-              boxShadow: '0 2px 5px rgba(0,0,0,0.5)',
+              borderRadius: '4px',
+              boxShadow: '0 2px 4px rgba(0,0,0,0.5)',
               transition: 'all 0.2s ease',
               position: 'relative'
             }}
             onMouseEnter={(e) => {
-              e.currentTarget.style.transform = 'scale(1.2)';
-              e.currentTarget.style.boxShadow = '0 3px 10px rgba(0,0,0,0.7)';
+              e.currentTarget.style.transform = 'scale(1.1)';
+              e.currentTarget.style.boxShadow = '0 2px 6px rgba(0,0,0,0.7)';
             }}
             onMouseLeave={(e) => {
               e.currentTarget.style.transform = 'scale(1)';
-              e.currentTarget.style.boxShadow = '0 2px 5px rgba(0,0,0,0.5)';
+              e.currentTarget.style.boxShadow = '0 2px 4px rgba(0,0,0,0.5)';
             }}
             title={c}
           />
         ))}
       </div>
 
-      <div 
-        ref={canvasRef}
-        data-canvas="true"
-        style={{ 
+      {canvasVisible ? (
+        <div 
+          ref={canvasRef}
+          data-canvas="true"
+          style={{ 
+            position: 'absolute',
+            top: '50%',
+            left: '50%',
+            transform: `translate(calc(-50% + ${offset.x}px), calc(-50% + ${offset.y}px)) scale(${scale})`,
+            cursor: isDragging ? 'grabbing' : 'grab',
+            transition: isDragging ? 'none' : 'transform 0.1s ease',
+            zIndex: 1
+          }}
+          onMouseDown={handleCanvasMouseDown}
+          onMouseMove={handleCanvasMouseMove}
+          onMouseUp={handleCanvasMouseUp}
+          onMouseLeave={() => {
+            setIsDragging(false);
+            dragStartPosRef.current = null;
+            isClickActionRef.current = true;
+          }}
+          onWheel={handleWheel}
+        >
+          <canvas
+            ref={canvasElementRef}
+            width={sizeX * pixelScale}
+            height={sizeY * pixelScale}
+            onClick={handleCanvasClick}
+            onMouseMove={handlePixelCanvasMouseMove}
+            onMouseLeave={handlePixelCanvasMouseLeave}
+            style={{
+              display: 'block',
+              cursor: (isAdmin && isSpaceDown) ? 'crosshair' : 'pointer',
+              imageRendering: 'pixelated'
+            }}
+          />
+          {/* Grid overlay */}
+          <div style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            width: '100%',
+            height: '100%',
+            pointerEvents: 'none',
+            imageRendering: 'pixelated',
+            backgroundImage: `
+              linear-gradient(to right, rgba(0,0,0,0.3) 1px, transparent 1px),
+              linear-gradient(to bottom, rgba(0,0,0,0.3) 1px, transparent 1px)
+            `,
+            backgroundSize: `${pixelScale}px ${pixelScale}px`
+          }} />
+        </div>
+      ) : (
+        <div style={{ 
           position: 'absolute',
           top: '50%',
           left: '50%',
-          transform: `translate(calc(-50% + ${offset.x}px), calc(-50% + ${offset.y}px)) scale(${scale})`,
-          cursor: isDragging ? 'grabbing' : 'grab',
-          transition: isDragging ? 'none' : 'transform 0.1s ease',
+          transform: 'translate(-50%, -50%)',
+          color: '#FFD700',
+          fontSize: '24px',
+          fontWeight: 'bold',
+          textAlign: 'center',
           zIndex: 1
-        }}
-        onMouseDown={handleCanvasMouseDown}
-        onMouseMove={handleCanvasMouseMove}
-        onMouseUp={handleCanvasMouseUp}
-        onMouseLeave={() => {
-          setIsDragging(false);
-          dragStartPosRef.current = null;
-          isClickActionRef.current = true;
-        }}
-        onWheel={handleWheel}
-      >
-        <canvas
-          ref={canvasElementRef}
-          width={size * pixelScale}
-          height={size * pixelScale}
-          onClick={handleCanvasClick}
-          onMouseMove={handlePixelCanvasMouseMove}
-          onMouseLeave={handlePixelCanvasMouseLeave}
-          style={{
-            display: 'block',
-            cursor: (isAdmin && isSpaceDown) ? 'crosshair' : 'pointer',
-            imageRendering: 'pixelated'
-          }}
-        />
-        {/* Grid overlay */}
-        <div style={{
-          position: 'absolute',
-          top: 0,
-          left: 0,
-          width: '100%',
-          height: '100%',
-          pointerEvents: 'none',
-          imageRendering: 'pixelated',
-          backgroundImage: `
-            linear-gradient(to right, rgba(0,0,0,0.3) 1px, transparent 1px),
-            linear-gradient(to bottom, rgba(0,0,0,0.3) 1px, transparent 1px)
-          `,
-          backgroundSize: `${pixelScale}px ${pixelScale}px`
-        }} />
-      </div>
+        }}>
+          Кхм.. что-то случилось попробуй обновить сайт. Может расширение?
+        </div>
+      )}
 
       {showHoveredInfo && hoveredInfo && (
         <div style={{ 
@@ -1276,26 +1332,44 @@ export default function Home() {
 
       <div style={{ 
         position: 'fixed', 
-        bottom: 10, 
-        left: 10, 
+        bottom: 20, 
+        left: '50%', 
+        transform: 'translateX(-50%)',
         background: 'rgba(0,0,0,0.8)', 
-        padding: '10px 12px', 
+        padding: '8px 16px', 
         borderRadius: '6px',
-        fontSize: '12px',
+        fontSize: '14px',
         border: '1px solid #FFD700',
         zIndex: 2000,
         boxShadow: '0 3px 10px rgba(255, 215, 0, 0.3)'
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <div style={{ color: '#FFD700' }}>
-            Камера: <span style={{color: '#FFD700'}}>x:{offset.x.toFixed(0)} y:{offset.y.toFixed(0)}</span> | 
-            Масштаб: <span style={{color: '#FFD700'}}>{scale.toFixed(2)}x</span>
+        {hoveredPixel && (
+          <div style={{ color: '#FFD700', fontWeight: 'bold' }}>
+            X: <span style={{color: '#4CAF50'}}>{hoveredPixel.x}, Y: {hoveredPixel.y}</span>
           </div>
+        )}
+      </div>
+
+      <div style={{ 
+        position: 'fixed', 
+        bottom: 10, 
+        left: 10, 
+        background: 'rgba(0,0,0,0.8)', 
+        padding: '8px 12px', 
+        borderRadius: '6px',
+        fontSize: '11px',
+        border: '1px solid #FFD700',
+        zIndex: 2000,
+        boxShadow: '0 3px 10px rgba(255, 215, 0, 0.3)'
+      }}>
+        <div style={{ color: '#FFD700', display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <span>Камера: <span style={{color: '#fff'}}>{offset.x.toFixed(0)}, {offset.y.toFixed(0)}</span></span>
+          <span>Масштаб: <span style={{color: '#fff'}}>{scale.toFixed(2)}x</span></span>
           <button 
             onClick={resetView} 
             style={{ 
-              padding: '3px 10px', 
-              fontSize: '11px', 
+              padding: '3px 8px', 
+              fontSize: '10px', 
               backgroundColor: '#333', 
               color: '#FFD700',
               border: '1px solid #FFD700',

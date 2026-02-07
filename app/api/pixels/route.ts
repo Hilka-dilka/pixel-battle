@@ -21,9 +21,13 @@ export async function GET() {
     // Получаем сообщения чата
     const chatMessages = await redis.lrange('chat_messages', 0, -1);
     
+    // Получаем состояние canvas
+    const canvasVisible = await redis.get('canvas_visible');
+    
     return NextResponse.json({
       pixels: pixels || {},
-      chatMessages: chatMessages || []
+      chatMessages: chatMessages || [],
+      canvasVisible: canvasVisible !== '0'
     });
   } catch (e) {
     console.error('GET error:', e);
@@ -128,6 +132,19 @@ export async function POST(req: Request) {
           userStats,
           onlineUsers
         });
+      }
+      if (action === 'canvas_toggle') {
+        // Получаем текущее состояние
+        const currentVisible = await redis.get('canvas_visible') as boolean | null;
+        const newVisible = !currentVisible;
+        
+        // Сохраняем новое состояние
+        await redis.set('canvas_visible', newVisible ? '1' : '0');
+        
+        // Уведомляем всех пользователей
+        await pusher.trigger('pixel-channel', 'canvas_toggle', { visible: newVisible });
+        
+        return NextResponse.json({ visible: newVisible });
       }
     }
 
