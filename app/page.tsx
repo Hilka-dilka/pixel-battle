@@ -43,6 +43,7 @@ export default function Home() {
   const [chatMuteDuration, setChatMuteDuration] = useState('5');
   const isSendingRef = useRef(false);
   const chatLoadedRef = useRef(false);
+  const chatContainerRef = useRef<HTMLDivElement>(null);
 
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const [scale, setScale] = useState(1);
@@ -139,6 +140,13 @@ export default function Home() {
         localStorage.setItem('chat_messages', JSON.stringify(updated.slice(-100)));
         return updated.slice(-100);
       });
+      
+      // Скролл к низу
+      setTimeout(() => {
+        if (chatContainerRef.current) {
+          chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
+        }
+      }, 100);
     });
 
     channel.bind('clear', () => setPixels({}));
@@ -417,10 +425,10 @@ export default function Home() {
           alert('Чат очищен!');
         }
         if (action === 'mute') {
-          alert(`${data.targetNickname} замьючен на ${data.duration} мин`);
+          alert(`${data.targetId} замьючен на ${data.duration} мин`);
         }
         if (action === 'unmute') {
-          alert(`${data.targetNickname} размьючен`);
+          alert(`${data.targetId} размьючен`);
         }
       } else {
         alert(result.error || 'Ошибка');
@@ -450,6 +458,13 @@ export default function Home() {
       localStorage.setItem('chat_messages', JSON.stringify(updated.slice(-100)));
       return updated.slice(-100);
     });
+    
+    // Скролл к низу
+    setTimeout(() => {
+      if (chatContainerRef.current) {
+        chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
+      }
+    }, 100);
     
     try {
       const userId = localStorage.getItem('p_id') || '';
@@ -860,7 +875,7 @@ export default function Home() {
               overflowY: 'auto',
               fontSize: '11px',
               marginBottom: '8px'
-            }}>
+            }} ref={chatContainerRef}>
               {chatMessages.length > 0 ? (
                 chatMessages.map((msg, index) => (
                   <div 
@@ -966,7 +981,7 @@ export default function Home() {
       {!isAdmin && (
         <div style={{ 
           position: 'fixed', 
-          bottom: '170px',
+          bottom: '150px',
           left: '50%', 
           transform: 'translateX(-50%)',
           width: '300px', 
@@ -1002,49 +1017,41 @@ export default function Home() {
 
       <div style={{ 
         position: 'fixed', 
-        bottom: '80px',
+        bottom: '70px',
         left: '50%', 
         transform: 'translateX(-50%)',
-        display: 'flex', 
-        gap: '15px', 
-        zIndex: 2000,
-        backgroundColor: 'rgba(20, 20, 20, 0.95)',
-        padding: '15px 25px',
-        borderRadius: '15px',
+        padding: '10px 15px',
+        borderRadius: '10px',
         border: '2px solid #FFD700',
         boxShadow: '0 6px 20px rgba(255, 215, 0, 0.3)',
-        alignItems: 'center'
+        display: 'flex',
+        gap: '8px',
+        flexWrap: 'wrap',
+        justifyContent: 'center',
+        maxWidth: '400px'
       }}>
-        <div style={{ 
-          fontSize: '13px', 
-          color: '#aaa',
-          marginRight: '15px',
-          whiteSpace: 'nowrap'
-        }}>
-          Выбор цвета:
-        </div>
-        {['#000000', '#808080', '#ffffff', '#ff0000'].map(c => (
+        {['#000000', '#808080', '#ffffff', '#ff0000', '#00fff7', '#006aff', '#001aff', '#00ff8c', '#00ff00', '#a2ff00', '#fff700', '#ff7700', '#8c00ff', '#f700ff', '#ff0099'].map(c => (
           <div 
             key={c} 
             onClick={() => setSelectedColor(c)} 
             style={{ 
-              width: '45px', 
-              height: '45px', 
+              width: '30px', 
+              height: '30px', 
               backgroundColor: c, 
-              border: selectedColor === c ? '4px solid #FFD700' : '3px solid #666', 
+              border: selectedColor === c ? '3px solid #FFD700' : '2px solid #444', 
               cursor: 'pointer', 
-              borderRadius: '10px',
-              boxShadow: '0 3px 8px rgba(0,0,0,0.5)',
+              borderRadius: '6px',
+              boxShadow: '0 2px 5px rgba(0,0,0,0.5)',
               transition: 'all 0.2s ease',
               position: 'relative'
             }}
             onMouseEnter={(e) => {
               e.currentTarget.style.transform = 'scale(1.2)';
-              e.currentTarget.style.boxShadow = '0 5px 15px rgba(0,0,0,0.7)';
+              e.currentTarget.style.boxShadow = '0 3px 10px rgba(0,0,0,0.7)';
             }}
             onMouseLeave={(e) => {
               e.currentTarget.style.transform = 'scale(1)';
-              e.currentTarget.style.boxShadow = '0 3px 8px rgba(0,0,0,0.5)';
+              e.currentTarget.style.boxShadow = '0 2px 5px rgba(0,0,0,0.5)';
             }}
             title={c}
           />
