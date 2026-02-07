@@ -38,6 +38,7 @@ export default function Home() {
   const [statsOpen, setStatsOpen] = useState(false);
   const [canvasVisible, setCanvasVisible] = useState(true);
   const [hoveredPixel, setHoveredPixel] = useState<{x: number, y: number} | null>(null);
+  const [canvasLoaded, setCanvasLoaded] = useState(false);
   
   const [chatMessages, setChatMessages] = useState<{nickname: string, text: string, time: string}[]>([]);
   const [chatInput, setChatInput] = useState('');
@@ -232,8 +233,8 @@ export default function Home() {
           }
         }
         setPixels(parsed);
+        setCanvasLoaded(true);
         // Если canvasVisible явно false (от админа), используем это значение
-        // Если null или undefined, оставляем default true
         if (data.canvasVisible === false) {
           setCanvasVisible(false);
         }
@@ -412,6 +413,25 @@ export default function Home() {
       };
     }
   }, [isAuthOk, auth]);
+
+  // Если canvas отключён, проверяем каждую секунду чтобы скрыть его
+  useEffect(() => {
+    if (!canvasVisible) {
+      const checkCanvas = setInterval(async () => {
+        try {
+          const res = await fetch('/api/pixels');
+          const data = await res.json();
+          if (data.canvasVisible !== false) {
+            setCanvasVisible(false);
+          }
+        } catch (e) {
+          console.error('Check canvas error:', e);
+        }
+      }, 1000);
+      
+      return () => clearInterval(checkCanvas);
+    }
+  }, [canvasVisible]);
 
   const checkAuth = async (nickname: string, password: string) => {
     setAuthError('');
@@ -1223,7 +1243,7 @@ export default function Home() {
         ))}
       </div>
 
-      {canvasVisible ? (
+      {canvasVisible && canvasLoaded ? (
         <div 
           ref={canvasRef}
           data-canvas="true"
@@ -1275,7 +1295,7 @@ export default function Home() {
             backgroundSize: `${pixelScale}px ${pixelScale}px`
           }} />
         </div>
-      ) : (
+      ) : canvasLoaded ? (
         <div style={{ 
           position: 'absolute',
           top: '50%',
@@ -1287,7 +1307,20 @@ export default function Home() {
           textAlign: 'center',
           zIndex: 1
         }}>
-          Кхм.. что-то случилось попробуй обновить сайт. Может расширение?
+          ❌ CANVAS ОТКЛЮЧЁН
+        </div>
+      ) : (
+        <div style={{ 
+          position: 'absolute',
+          top: '50%',
+          left: '50%',
+          transform: 'translate(-50%, -50%)',
+          color: '#FFD700',
+          fontSize: '18px',
+          textAlign: 'center',
+          zIndex: 1
+        }}>
+          Загрузка...
         </div>
       )}
 
