@@ -57,7 +57,6 @@ export default function Home() {
   const size = 90;
   const cellSize = 20;
 
-  // Загрузка сообщений чата
   const loadChatMessages = async () => {
     if (chatLoadedRef.current) return;
     
@@ -88,7 +87,6 @@ export default function Home() {
       checkAuth(savedNick, savedPass);
     }
 
-    // Загружаем полотно
     fetch('/api/pixels')
       .then(res => {
         if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
@@ -107,7 +105,6 @@ export default function Home() {
       })
       .catch(err => console.error('Failed to load pixels:', err));
 
-    // Pusher
     const pusher = new Pusher("428b10fa704e1012072a", { cluster: "eu" });
     const channel = pusher.subscribe('pixel-channel');
     
@@ -172,7 +169,6 @@ export default function Home() {
     };
   }, [isAdmin]);
 
-  // Загружаем чат когда он открывается
   useEffect(() => {
     if (chatOpen) {
       loadChatMessages();
@@ -386,7 +382,7 @@ export default function Home() {
     });
     
     try {
-      const res = await fetch('/api/chat', {
+      await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -399,6 +395,7 @@ export default function Home() {
     } finally {
       isSendingRef.current = false;
     }
+  };
 
   const handleChatKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
