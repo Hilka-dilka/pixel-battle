@@ -1243,7 +1243,7 @@ export default function Home() {
         ))}
       </div>
 
-      {canvasVisible && canvasLoaded ? (
+      {canvasVisible && canvasLoaded && (
         <div 
           ref={canvasRef}
           data-canvas="true"
@@ -1295,21 +1295,24 @@ export default function Home() {
             backgroundSize: `${pixelScale}px ${pixelScale}px`
           }} />
         </div>
-      ) : canvasLoaded ? (
+      )}
+
+      {!canvasVisible && canvasLoaded && (
         <div style={{ 
-          position: 'absolute',
-          top: '50%',
-          left: '50%',
-          transform: 'translate(-50%, -50%)',
-          color: '#FFD700',
-          fontSize: '24px',
-          fontWeight: 'bold',
-          textAlign: 'center',
-          zIndex: 1
+          position: 'fixed',
+          top: 10,
+          right: 10,
+          background: '#1a1a1a',
+          padding: '10px 15px',
+          borderRadius: '8px',
+          border: '2px solid #ff4444',
+          zIndex: 2000
         }}>
-          ❌ CANVAS ОТКЛЮЧЁН
+          <div style={{ color: '#ff4444', fontWeight: 'bold' }}>❌ Canvas отключён</div>
         </div>
-      ) : (
+      )}
+
+      {!canvasLoaded && (
         <div style={{ 
           position: 'absolute',
           top: '50%',
