@@ -1157,7 +1157,7 @@ export default function Home() {
           margin: 0,
           color: '#FFD700'
         }}>
-          PIXEL BATTLE LIVE
+          PIXEL BATTLE P1V3
         </h1>
       </div>
 
@@ -1200,7 +1200,7 @@ export default function Home() {
 
       <div style={{ 
         position: 'fixed', 
-        bottom: '60px',
+        bottom: '70px',
         left: '50%', 
         transform: 'translateX(-50%)',
         padding: '6px 12px',
@@ -1300,15 +1300,25 @@ export default function Home() {
       {!canvasVisible && canvasLoaded && (
         <div style={{ 
           position: 'fixed',
-          top: 10,
-          right: 10,
-          background: '#1a1a1a',
-          padding: '10px 15px',
-          borderRadius: '8px',
-          border: '2px solid #ff4444',
-          zIndex: 2000
+          top: 0,
+          left: 0,
+          width: '100%',
+          height: '100%',
+          background: 'rgba(0,0,0,0.9)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 9999
         }}>
-          <div style={{ color: '#ff4444', fontWeight: 'bold' }}>❌ Canvas отключён</div>
+          <div style={{ 
+            color: '#FFD700',
+            fontSize: '24px',
+            fontWeight: 'bold',
+            textAlign: 'center',
+            padding: '20px'
+          }}>
+            Кхм.. что-то сломалось, попробуйте перезагрузить сайт.
+          </div>
         </div>
       )}
 
