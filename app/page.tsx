@@ -21,11 +21,9 @@ export default function Home() {
   const [authError, setAuthError] = useState<string>('');
   const [loadingStats, setLoadingStats] = useState(false);
   
-  // Статистика игроков (доступна всем)
   const [playerStats, setPlayerStats] = useState<PlayerStats[]>([]);
   const [onlineCount, setOnlineCount] = useState(0);
 
-  // Состояние админки (только для админа)
   const [adminData, setAdminData] = useState<{
     users: string[], 
     banned: string[],
@@ -36,16 +34,14 @@ export default function Home() {
   const [banInput, setBanInput] = useState('');
   const isAdmin = auth.nick.toLowerCase() === 'admin';
   
-  // Состояния для чата и статистики
   const [chatOpen, setChatOpen] = useState(false);
   const [statsOpen, setStatsOpen] = useState(false);
   
-  // Состояния чата
   const [chatMessages, setChatMessages] = useState<{nickname: string, text: string, time: string}[]>([]);
   const [chatInput, setChatInput] = useState('');
   const isSendingRef = useRef(false);
+  const chatLoadedRef = useRef(false);
 
-  // Состояние для перемещения и зума
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const [scale, setScale] = useState(1);
   const [isDragging, setIsDragging] = useState(false);
@@ -55,12 +51,34 @@ export default function Home() {
   const hoverTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const statsRefreshRef = useRef<NodeJS.Timeout | null>(null);
   
-  // Для предотвращения случайного рисования при перемещении
   const dragStartPosRef = useRef<{x: number, y: number} | null>(null);
   const isClickActionRef = useRef<boolean>(true);
 
   const size = 90;
   const cellSize = 20;
+
+  // Загрузка сообщений чата
+  const loadChatMessages = async () => {
+    if (chatLoadedRef.current) return;
+    
+    try {
+      const res = await fetch('/api/messages');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.messages) {
+          const msgs = data.messages.map((m: any) => ({
+            ...m,
+            time: new Date(m.time).toLocaleTimeString()
+          }));
+          setChatMessages(msgs);
+          localStorage.setItem('chat_messages', JSON.stringify(msgs));
+          chatLoadedRef.current = true;
+        }
+      }
+    } catch (error) {
+      console.error('Failed to load chat:', error);
+    }
+  };
 
   useEffect(() => {
     const savedNick = localStorage.getItem('p_nick');
@@ -70,14 +88,13 @@ export default function Home() {
       checkAuth(savedNick, savedPass);
     }
 
-    // Загружаем сообщения чата и полотно с сервера
+    // Загружаем полотно
     fetch('/api/pixels')
       .then(res => {
         if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
         return res.json();
       })
       .then(data => {
-        // Загружаем пиксели
         const parsed: any = {};
         for (const k in data.pixels || {}) {
           try { 
@@ -87,21 +104,8 @@ export default function Home() {
           }
         }
         setPixels(parsed);
-        
-        // Загружаем сообщения чата
-        if (data.chatMessages && Array.isArray(data.chatMessages)) {
-          const messages = data.chatMessages.map((msg: string) => {
-            try {
-              return JSON.parse(msg);
-            } catch (e) {
-              return null;
-            }
-          }).filter(Boolean);
-          setChatMessages(messages);
-          localStorage.setItem('chat_messages', JSON.stringify(messages));
-        }
       })
-      .catch(err => console.error('Failed to load data:', err));
+      .catch(err => console.error('Failed to load pixels:', err));
 
     // Pusher
     const pusher = new Pusher("428b10fa704e1012072a", { cluster: "eu" });
@@ -126,7 +130,6 @@ export default function Home() {
 
     channel.bind('clear', () => setPixels({}));
 
-    // Обработчики для зажатия ПРОБЕЛА
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.code === 'Space' && isAdmin) {
         e.preventDefault();
@@ -143,14 +146,12 @@ export default function Home() {
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('keyup', handleKeyUp);
 
-    // Отслеживание позиции мыши для tooltip
     const handleMouseMove = (e: MouseEvent) => {
       setMousePosition({ x: e.clientX, y: e.clientY });
     };
 
     window.addEventListener('mousemove', handleMouseMove);
 
-    // Предотвращаем скролл страницы колесиком
     const handleWheelGlobal = (e: WheelEvent) => {
       if (e.target instanceof HTMLElement && e.target.closest('[data-canvas]')) {
         e.preventDefault();
@@ -159,7 +160,6 @@ export default function Home() {
 
     window.addEventListener('wheel', handleWheelGlobal, { passive: false });
 
-    // Очистка при размонтировании
     return () => { 
       pusher.unsubscribe('pixel-channel'); 
       window.removeEventListener('keydown', handleKeyDown);
@@ -172,7 +172,13 @@ export default function Home() {
     };
   }, [isAdmin]);
 
-  // Загрузка статистики игроков (для всех пользователей)
+  // Загружаем чат когда он открывается
+  useEffect(() => {
+    if (chatOpen) {
+      loadChatMessages();
+    }
+  }, [chatOpen]);
+
   const loadPlayerStats = async () => {
     setLoadingStats(true);
     try {
@@ -189,7 +195,6 @@ export default function Home() {
       if (res.ok) {
         const data = await res.json();
         
-        // Для админа сохраняем полные данные
         if (isAdmin) {
           setAdminData({
             users: data.users || [],
@@ -199,25 +204,17 @@ export default function Home() {
           });
         }
         
-        // Для всех пользователей формируем статистику
         const userStats: Record<string, number> = data.userStats || {};
         const onlineUsers: string[] = data.onlineUsers || [];
         
-        // Собираем всех пользователей из разных источников
         const allUsersSet = new Set<string>();
-        
-        // Добавляем пользователей из userStats
         Object.keys(userStats).forEach((user: string) => allUsersSet.add(user));
-        
-        // Добавляем онлайн пользователей
         onlineUsers.forEach((user: string) => allUsersSet.add(user));
         
-        // Для админа добавляем всех зарегистрированных пользователей
         if (isAdmin && data.users) {
           (data.users as string[]).forEach((user: string) => allUsersSet.add(user));
         }
         
-        // Формируем статистику игроков
         const stats: PlayerStats[] = Array.from(allUsersSet)
           .filter((user: string) => user && user !== 'admin')
           .map((user: string) => ({
@@ -226,7 +223,6 @@ export default function Home() {
             isOnline: onlineUsers.includes(user)
           }));
         
-        // Сортируем по количеству пикселей (по убыванию)
         stats.sort((a: PlayerStats, b: PlayerStats) => b.pixelsCount - a.pixelsCount);
         setPlayerStats(stats);
         setOnlineCount(onlineUsers.length);
@@ -241,13 +237,9 @@ export default function Home() {
     }
   };
 
-  // Автоматическое обновление статистики для всех
   useEffect(() => {
     if (isAuthOk) {
-      // Загружаем сразу
       loadPlayerStats();
-      
-      // Затем каждые 30 секунд
       statsRefreshRef.current = setInterval(loadPlayerStats, 30000);
       
       return () => {
@@ -256,7 +248,6 @@ export default function Home() {
     }
   }, [isAuthOk, auth]);
 
-  // Проверка авторизации
   const checkAuth = async (nickname: string, password: string) => {
     setAuthError('');
     try {
@@ -278,8 +269,6 @@ export default function Home() {
         setAuthError('');
         localStorage.setItem('p_nick', nickname);
         localStorage.setItem('p_pass', password);
-        
-        // Загружаем статистику после успешной авторизации
         setTimeout(() => loadPlayerStats(), 1000);
       } else {
         setAuthError(data.error || 'Authentication failed');
@@ -336,7 +325,6 @@ export default function Home() {
           localStorage.clear();
         }
       } else {
-        // Обновляем статистику после успешной установки пикселя
         setTimeout(() => loadPlayerStats(), 500);
       }
     } catch (error) {
@@ -377,7 +365,6 @@ export default function Home() {
     }
   };
 
-  // Отправка сообщения в чат
   const sendChatMessage = async (e?: React.FormEvent | React.KeyboardEvent) => {
     if (e) e.preventDefault();
     const text = chatInput.trim();
@@ -392,7 +379,6 @@ export default function Home() {
       time: new Date().toLocaleTimeString() 
     };
     
-    // Локальное отображение сразу
     setChatMessages(prev => {
       const updated = [...prev, newMessage];
       localStorage.setItem('chat_messages', JSON.stringify(updated.slice(-100)));
@@ -400,11 +386,10 @@ export default function Home() {
     });
     
     try {
-      await fetch('/api/pixels', {
+      await fetch('/api/messages', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          action: 'chat',
           nickname: auth.nick,
           text: text
         }),
@@ -416,7 +401,6 @@ export default function Home() {
     isSendingRef.current = false;
   };
 
-  // Обработка Enter и пробела в чате
   const handleChatKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -424,7 +408,6 @@ export default function Home() {
     }
   };
 
-  // Обработчики для перемещения полотна
   const handleCanvasMouseDown = (e: React.MouseEvent) => {
     if (e.button === 0) {
       dragStartPosRef.current = { x: e.clientX, y: e.clientY };
@@ -467,7 +450,6 @@ export default function Home() {
     setScale(newScale);
   };
 
-  // Обработчики для tooltip с задержкой
   const handlePixelEnter = (data: any) => {
     setHoveredInfo(data);
     setShowHoveredInfo(false);
@@ -478,7 +460,7 @@ export default function Home() {
     
     hoverTimeoutRef.current = setTimeout(() => {
       setShowHoveredInfo(true);
-    }, 500); // 0.5 секунды задержки
+    }, 500);
   };
 
   const handlePixelLeave = () => {
@@ -491,7 +473,6 @@ export default function Home() {
     }
   };
 
-  // Клик по пикселю
   const handlePixelClick = (e: React.MouseEvent, x: number, y: number) => {
     e.preventDefault();
     e.stopPropagation();
@@ -501,13 +482,11 @@ export default function Home() {
     }
   };
 
-  // Сброс камеры
   const resetView = () => {
     setOffset({ x: 0, y: 0 });
     setScale(1);
   };
 
-  // Авторизация
   const handleAuthSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     await checkAuth(auth.nick, auth.pass);
@@ -568,7 +547,6 @@ export default function Home() {
       margin: 0
     }}>
       
-      {/* ПАНЕЛЬ АДМИНА (только для админа) */}
       {isAdmin && (
         <div style={{ position: 'fixed', left: 10, top: 10, width: '220px', background: '#1a1a1a', padding: '15px', borderRadius: '10px', border: '2px solid #FFD700', fontSize: '11px', zIndex: 2000 }}>
           <h4 style={{ color: '#FFD700', margin: '0 0 10px 0' }}>ADMIN PANEL</h4>
@@ -588,7 +566,6 @@ export default function Home() {
         </div>
       )}
 
-      {/* ПАНЕЛЬ СТАТИСТИКИ ИГРОКОВ (для всех) */}
       <div style={{ 
         position: 'fixed', 
         top: 10, 
@@ -599,7 +576,6 @@ export default function Home() {
         gap: '15px',
         width: '280px'
       }}>
-        {/* ИНФОРМАЦИЯ О ТЕКУЩЕМ ПОЛЬЗОВАТЕЛЕ */}
         <div style={{ 
           background: '#1a1a1a',
           padding: '12px',
@@ -610,7 +586,6 @@ export default function Home() {
           alignItems: 'center',
           gap: '8px'
         }}>
-          {/* Кнопка статистики */}
           <button
             onClick={() => { setStatsOpen(!statsOpen); setChatOpen(false); }}
             style={{
@@ -628,7 +603,6 @@ export default function Home() {
             <img src="/graph.svg" alt="Статистика" width="20" height="20" />
           </button>
           
-          {/* Никнейм */}
           <span style={{ 
             fontSize: '14px',
             color: isAdmin ? '#FFD700' : '#4CAF50',
@@ -638,7 +612,6 @@ export default function Home() {
             {auth.nick} {isAdmin && '👑'}
           </span>
           
-          {/* Иконка чата */}
           <button
             onClick={() => { setChatOpen(!chatOpen); setStatsOpen(false); }}
             style={{
@@ -656,7 +629,6 @@ export default function Home() {
             <img src="/message.svg" alt="Чат" width="20" height="20" />
           </button>
           
-          {/* Кнопка выхода */}
           <button 
             onClick={() => {localStorage.clear(); location.reload();}} 
             style={{
@@ -673,7 +645,6 @@ export default function Home() {
           </button>
         </div>
         
-        {/* МЕНЮ СТАТИСТИКИ */}
         {statsOpen && (
           <div style={{ 
             background: '#1a1a1a',
@@ -683,7 +654,6 @@ export default function Home() {
             boxShadow: '0 4px 12px rgba(255, 215, 0, 0.3)',
             animation: 'fadeIn 0.3s ease'
           }}>
-          {/* СТАТИСТИКА ОНЛАЙН */}
           <div style={{ 
             fontSize: '11px', 
             color: '#FFD700',
@@ -702,7 +672,6 @@ export default function Home() {
             )}
           </div>
           
-          {/* СПИСОК ИГРОКОВ */}
           <div style={{ 
             maxHeight: '300px',
             overflowY: 'auto',
@@ -772,7 +741,6 @@ export default function Home() {
             )}
           </div>
           
-          {/* КНОПКА ОБНОВЛЕНИЯ */}
           <button 
             onClick={loadPlayerStats}
             disabled={loadingStats}
@@ -794,7 +762,6 @@ export default function Home() {
         </div>
         )}
         
-        {/* МЕНЮ ЧАТА */}
         {chatOpen && (
           <div style={{ 
             background: '#1a1a1a',
@@ -804,7 +771,6 @@ export default function Home() {
             boxShadow: '0 4px 12px rgba(255, 215, 0, 0.3)',
             animation: 'fadeIn 0.3s ease'
           }}>
-            {/* Список сообщений */}
             <div style={{ 
               maxHeight: '200px',
               overflowY: 'auto',
@@ -855,7 +821,6 @@ export default function Home() {
               )}
             </div>
             
-            {/* Форма отправки */}
             <form onSubmit={sendChatMessage} style={{ display: 'flex', gap: '8px' }}>
               <input
                 type="text"
@@ -893,7 +858,6 @@ export default function Home() {
         )}
       </div>
 
-      {/* ЗАГОЛОВОК */}
       <div style={{ 
         position: 'fixed', 
         top: 10, 
@@ -915,7 +879,6 @@ export default function Home() {
         </h1>
       </div>
 
-      {/* КУЛДАУН БАР */}
       {!isAdmin && (
         <div style={{ 
           position: 'fixed', 
@@ -953,7 +916,6 @@ export default function Home() {
         </div>
       )}
 
-      {/* ПАЛИТРА ЦВЕТОВ */}
       <div style={{ 
         position: 'fixed', 
         bottom: '80px',
@@ -1005,7 +967,6 @@ export default function Home() {
         ))}
       </div>
 
-      {/* ОБЛАСТЬ С ПОЛОТНОМ */}
       <div 
         ref={canvasRef}
         data-canvas="true"
@@ -1028,7 +989,6 @@ export default function Home() {
         }}
         onWheel={handleWheel}
       >
-        {/* СЕТКА ПИКСЕЛЕЙ */}
         <div style={{ 
           display: 'grid', 
           gridTemplateColumns: `repeat(${size}, ${cellSize}px)`, 
@@ -1066,7 +1026,6 @@ export default function Home() {
         </div>
       </div>
 
-      {/* TOOLTIP */}
       {showHoveredInfo && hoveredInfo && (
         <div style={{ 
           position: 'fixed',
@@ -1108,7 +1067,6 @@ export default function Home() {
         </div>
       )}
 
-      {/* ИНФОРМАЦИЯ О КАМЕРЕ */}
       <div style={{ 
         position: 'fixed', 
         bottom: 10, 
@@ -1159,7 +1117,6 @@ export default function Home() {
           height: 100%;
         }
         
-        /* Стили для скроллбара */
         ::-webkit-scrollbar {
           width: 6px;
         }
