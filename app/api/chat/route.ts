@@ -80,6 +80,10 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: 'Недостаточно прав' }, { status: 403 });
       }
       await redis.del('chat_messages');
+      
+      // Отправляем всем уведомление об очистке чата
+      await pusher.trigger('pixel-channel', 'clear_chat', {});
+      
       return NextResponse.json({ ok: true, message: 'Чат очищен' });
     }
     
@@ -94,6 +98,14 @@ export async function POST(req: Request) {
       }
       const expires = Date.now() + (duration * 60 * 1000);
       await redis.set(`mute:${targetId}`, JSON.stringify({ expires, by: nickname }));
+      
+      // Уведомление о муте
+      await pusher.trigger('pixel-channel', 'user_muted', { 
+        targetId, 
+        expires,
+        by: nickname 
+      });
+      
       return NextResponse.json({ ok: true, message: `${targetId} замьючен на ${duration} мин` });
     }
     
@@ -107,6 +119,10 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: 'Укажите ID' }, { status: 400 });
       }
       await redis.del(`mute:${targetId}`);
+      
+      // Уведомление о размуте
+      await pusher.trigger('pixel-channel', 'user_unmuted', { targetId });
+      
       return NextResponse.json({ ok: true, message: `${targetId} размьючен` });
     }
     

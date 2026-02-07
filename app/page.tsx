@@ -143,6 +143,25 @@ export default function Home() {
 
     channel.bind('clear', () => setPixels({}));
 
+    channel.bind('clear_chat', () => {
+      setChatMessages([]);
+      localStorage.removeItem('chat_messages');
+    });
+
+    channel.bind('user_muted', (update: any) => {
+      const userId = localStorage.getItem('p_id');
+      if (userId && update.targetId === userId) {
+        alert(`Вы были замьючены админом ${update.by} до ${new Date(update.expires).toLocaleTimeString()}`);
+      }
+    });
+
+    channel.bind('user_unmuted', (update: any) => {
+      const userId = localStorage.getItem('p_id');
+      if (userId && update.targetId === userId) {
+        alert('Вы были размьючены!');
+      }
+    });
+
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.code === 'Space' && isAdmin) {
         e.preventDefault();
