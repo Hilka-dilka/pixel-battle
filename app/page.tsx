@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useState, useRef, useMemo, useCallback } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import Pusher from 'pusher-js';
 
 interface PlayerStats {
@@ -45,22 +45,23 @@ export default function Home() {
   const chatLoadedRef = useRef(false);
   const chatContainerRef = useRef<HTMLDivElement>(null);
 
-  // Используем refs для производительности
-  const offsetRef = useRef({ x: 0, y: 0 });
-  const scaleRef = useRef(1);
-  const isDraggingRef = useRef(false);
-  const dragStartRef = useRef({ x: 0, y: 0 });
-  const canvasOffsetRef = useRef({ x: 0, y: 0 });
-  const mousePositionRef = useRef({ x: 0, y: 0 });
-  const isClickActionRef = useRef(true);
-  const dragStartPosRef = useRef<{x: number, y: number} | null>(null);
+  const [offset, setOffset] = useState({ x: 0, y: 0 });
+  const [scale, setScale] = useState(1);
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+  const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
+  const canvasRef = useRef<HTMLDivElement>(null);
   const hoverTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const statsRefreshRef = useRef<NodeJS.Timeout | null>(null);
+  
+  const dragStartPosRef = useRef<{x: number, y: number} | null>(null);
+  const isClickActionRef = useRef<boolean>(true);
 
   const size = 90;
   const cellSize = 20;
 
-  const loadChatMessages = useCallback(async () => {
+  const loadChatMessages = async () => {
+    // Всегда пытаемся загрузить с сервера
     try {
       const res = await fetch('/api/messages');
       if (res.ok) {
@@ -80,6 +81,7 @@ export default function Home() {
       console.error('Failed to load chat from server:', error);
     }
     
+    // Если сервер недоступен или пустой - загружаем из localStorage
     const saved = localStorage.getItem('chat_messages');
     if (saved) {
       try {
@@ -92,15 +94,7 @@ export default function Home() {
         console.error('Failed to parse saved messages:', e);
       }
     }
-  }, []);
-
-  const scrollChatToBottom = useCallback(() => {
-    setTimeout(() => {
-      if (chatContainerRef.current) {
-        chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
-      }
-    }, 100);
-  }, []);
+  };
 
   useEffect(() => {
     const savedNick = localStorage.getItem('p_nick');
@@ -146,7 +140,13 @@ export default function Home() {
         localStorage.setItem('chat_messages', JSON.stringify(updated.slice(-100)));
         return updated.slice(-100);
       });
-      scrollChatToBottom();
+      
+      // Скролл к низу
+      setTimeout(() => {
+        if (chatContainerRef.current) {
+          chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
+        }
+      }, 100);
     });
 
     channel.bind('clear', () => setPixels({}));
@@ -187,7 +187,7 @@ export default function Home() {
     window.addEventListener('keyup', handleKeyUp);
 
     const handleMouseMove = (e: MouseEvent) => {
-      mousePositionRef.current = { x: e.clientX, y: e.clientY };
+      setMousePosition({ x: e.clientX, y: e.clientY });
     };
 
     window.addEventListener('mousemove', handleMouseMove);
@@ -210,16 +210,16 @@ export default function Home() {
       if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
       if (statsRefreshRef.current) clearInterval(statsRefreshRef.current);
     };
-  }, [isAdmin, isAdmin, scrollChatToBottom]);
+  }, [isAdmin]);
 
   useEffect(() => {
     if (chatOpen) {
-      chatLoadedRef.current = false;
+      chatLoadedRef.current = false; // Сбрасываем флаг чтобы перезагрузить сообщения
       loadChatMessages();
     }
-  }, [chatOpen, loadChatMessages]);
+  }, [chatOpen]);
 
-  const loadPlayerStats = useCallback(async () => {
+  const loadPlayerStats = async () => {
     setLoadingStats(true);
     try {
       const res = await fetch('/api/pixels', {
@@ -275,7 +275,7 @@ export default function Home() {
     } finally {
       setLoadingStats(false);
     }
-  }, [auth, isAdmin]);
+  };
 
   useEffect(() => {
     if (isAuthOk) {
@@ -286,7 +286,7 @@ export default function Home() {
         if (statsRefreshRef.current) clearInterval(statsRefreshRef.current);
       };
     }
-  }, [isAuthOk, auth, loadPlayerStats]);
+  }, [isAuthOk, auth]);
 
   const checkAuth = async (nickname: string, password: string) => {
     setAuthError('');
@@ -459,7 +459,12 @@ export default function Home() {
       return updated.slice(-100);
     });
     
-    scrollChatToBottom();
+    // Скролл к низу
+    setTimeout(() => {
+      if (chatContainerRef.current) {
+        chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
+      }
+    }, 100);
     
     try {
       const userId = localStorage.getItem('p_id') || '';
@@ -487,54 +492,49 @@ export default function Home() {
     }
   };
 
-  const handleCanvasMouseDown = useCallback((e: React.MouseEvent) => {
+  const handleCanvasMouseDown = (e: React.MouseEvent) => {
     if (e.button === 0) {
       dragStartPosRef.current = { x: e.clientX, y: e.clientY };
       isClickActionRef.current = true;
       e.preventDefault();
     }
-  }, []);
+  };
 
-  const handleCanvasMouseMove = useCallback((e: React.MouseEvent) => {
-    if (!isDraggingRef.current && dragStartPosRef.current) {
+  const handleCanvasMouseMove = (e: React.MouseEvent) => {
+    if (!isDragging && dragStartPosRef.current) {
       const dx = e.clientX - dragStartPosRef.current.x;
       const dy = e.clientY - dragStartPosRef.current.y;
       const distance = Math.sqrt(dx * dx + dy * dy);
       
       if (distance > 10) {
-        isDraggingRef.current = true;
+        setIsDragging(true);
         isClickActionRef.current = false;
-        dragStartRef.current = { x: e.clientX - canvasOffsetRef.current.x, y: e.clientY - canvasOffsetRef.current.y };
+        setDragStart({ x: e.clientX - offset.x, y: e.clientY - offset.y });
       }
     }
     
-    if (isDraggingRef.current) {
-      canvasOffsetRef.current = {
-        x: e.clientX - dragStartRef.current.x,
-        y: e.clientY - dragStartRef.current.y
-      };
-      // Обновляем refs для отображения
-      offsetRef.current = canvasOffsetRef.current;
-      // Принудительный ре-рендер только если нужно
-      setPixels(prev => prev);
+    if (isDragging) {
+      setOffset({
+        x: e.clientX - dragStart.x,
+        y: e.clientY - dragStart.y
+      });
     }
-  }, []);
+  };
 
-  const handleCanvasMouseUp = useCallback(() => {
-    isDraggingRef.current = false;
+  const handleCanvasMouseUp = () => {
+    setIsDragging(false);
     dragStartPosRef.current = null;
     isClickActionRef.current = true;
-  }, []);
+  };
 
-  const handleWheel = useCallback((e: React.WheelEvent) => {
+  const handleWheel = (e: React.WheelEvent) => {
     e.preventDefault();
     const delta = e.deltaY > 0 ? 0.9 : 1.1;
-    const newScale = Math.max(0.1, Math.min(10, scaleRef.current * delta));
-    scaleRef.current = newScale;
-    setPixels(prev => prev);
-  }, []);
+    const newScale = Math.max(0.1, Math.min(10, scale * delta));
+    setScale(newScale);
+  };
 
-  const handlePixelEnter = useCallback((data: any) => {
+  const handlePixelEnter = (data: any) => {
     setHoveredInfo(data);
     setShowHoveredInfo(false);
     
@@ -545,9 +545,9 @@ export default function Home() {
     hoverTimeoutRef.current = setTimeout(() => {
       setShowHoveredInfo(true);
     }, 500);
-  }, []);
+  };
 
-  const handlePixelLeave = useCallback(() => {
+  const handlePixelLeave = () => {
     setHoveredInfo(null);
     setShowHoveredInfo(false);
     
@@ -555,35 +555,26 @@ export default function Home() {
       clearTimeout(hoverTimeoutRef.current);
       hoverTimeoutRef.current = null;
     }
-  }, []);
+  };
 
-  const handlePixelClick = useCallback((e: React.MouseEvent, x: number, y: number) => {
+  const handlePixelClick = (e: React.MouseEvent, x: number, y: number) => {
     e.preventDefault();
     e.stopPropagation();
     
     if (isAdmin ? isSpaceDown : true) {
       clickPixel(x, y);
     }
-  }, [isAdmin, isSpaceDown]);
+  };
 
-  const resetView = useCallback(() => {
-    canvasOffsetRef.current = { x: 0, y: 0 };
-    scaleRef.current = 1;
-    offsetRef.current = { x: 0, y: 0 };
-    setPixels(prev => prev);
-  }, []);
+  const resetView = () => {
+    setOffset({ x: 0, y: 0 });
+    setScale(1);
+  };
 
   const handleAuthSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     await checkAuth(auth.nick, auth.pass);
   };
-
-  // Мемоизируем пиксели для производительности
-  const pixelArray = useMemo(() => Array.from({ length: size * size }).map((_, i) => {
-    const x = i % size;
-    const y = Math.floor(i / size);
-    return { x, y, key: `${x}-${y}`, data: pixels[`${x}-${y}`] };
-  }), [pixels, size]);
 
   if (!isAuthOk) {
     return (
@@ -620,10 +611,6 @@ export default function Home() {
       </div>
     );
   }
-
-  const canvasStyle = {
-    transform: `translate(calc(-50% + ${canvasOffsetRef.current.x}px), calc(-50% + ${canvasOffsetRef.current.y}px)) scale(${scaleRef.current})`,
-  };
 
   return (
     <div style={{ 
@@ -1074,22 +1061,22 @@ export default function Home() {
       </div>
 
       <div 
+        ref={canvasRef}
         data-canvas="true"
         style={{ 
           position: 'absolute',
           top: '50%',
           left: '50%',
-          ...canvasStyle,
-          cursor: isDraggingRef.current ? 'grabbing' : 'grab',
-          transition: isDraggingRef.current ? 'none' : 'transform 0.1s ease',
-          zIndex: 1,
-          willChange: 'transform'
+          transform: `translate(calc(-50% + ${offset.x}px), calc(-50% + ${offset.y}px)) scale(${scale})`,
+          cursor: isDragging ? 'grabbing' : 'grab',
+          transition: isDragging ? 'none' : 'transform 0.1s ease',
+          zIndex: 1
         }}
         onMouseDown={handleCanvasMouseDown}
         onMouseMove={handleCanvasMouseMove}
         onMouseUp={handleCanvasMouseUp}
         onMouseLeave={() => {
-          isDraggingRef.current = false;
+          setIsDragging(false);
           dragStartPosRef.current = null;
           isClickActionRef.current = true;
         }}
@@ -1102,38 +1089,41 @@ export default function Home() {
           backgroundColor: '#333', 
           gap: '1px', 
           border: '2px solid #444',
-          boxShadow: '0 8px 24px rgba(0,0,0,0.8)',
-          transform: 'translateZ(0)',
-          backfaceVisibility: 'hidden'
+          boxShadow: '0 8px 24px rgba(0,0,0,0.8)'
         }}>
-          {pixelArray.map(({ x, y, key, data }) => (
-            <div 
-              key={key}
-              onClick={(e) => handlePixelClick(e, x, y)}
-              onMouseEnter={() => { 
-                if (isAdmin && isSpaceDown) {
-                  clickPixel(x, y);
-                }
-                if (data) handlePixelEnter({ ...data, x, y });
-              }}
-              onMouseLeave={handlePixelLeave}
-              style={{ 
-                width: `${cellSize}px`, 
-                height: `${cellSize}px`, 
-                backgroundColor: data?.color || '#ffffff', 
-                cursor: (isAdmin && isSpaceDown) ? 'crosshair' : 'pointer',
-                transform: 'translateZ(0)'
-              }}
-            />
-          ))}
+          {Array.from({ length: size * size }).map((_, i) => {
+            const x = i % size; 
+            const y = Math.floor(i / size);
+            const data = pixels[`${x}-${y}`];
+
+            return (
+              <div 
+                key={i} 
+                onClick={(e) => handlePixelClick(e, x, y)}
+                onMouseEnter={() => { 
+                  if (isAdmin && isSpaceDown) {
+                    clickPixel(x, y);
+                  }
+                  if (data) handlePixelEnter({ ...data, x, y });
+                }}
+                onMouseLeave={handlePixelLeave}
+                style={{ 
+                  width: `${cellSize}px`, 
+                  height: `${cellSize}px`, 
+                  backgroundColor: data?.color || '#ffffff', 
+                  cursor: (isAdmin && isSpaceDown) ? 'crosshair' : 'pointer'
+                }}
+              />
+            );
+          })}
         </div>
       </div>
 
       {showHoveredInfo && hoveredInfo && (
         <div style={{ 
           position: 'fixed',
-          top: mousePositionRef.current.y + 15,
-          left: mousePositionRef.current.x + 15,
+          top: mousePosition.y + 15,
+          left: mousePosition.x + 15,
           backgroundColor: '#222',
           padding: '12px',
           borderRadius: '6px',
@@ -1184,8 +1174,8 @@ export default function Home() {
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           <div style={{ color: '#FFD700' }}>
-            Камера: <span style={{color: '#FFD700'}}>x:{canvasOffsetRef.current.x.toFixed(0)} y:{canvasOffsetRef.current.y.toFixed(0)}</span> | 
-            Масштаб: <span style={{color: '#FFD700'}}>{scaleRef.current.toFixed(2)}x</span>
+            Камера: <span style={{color: '#FFD700'}}>x:{offset.x.toFixed(0)} y:{offset.y.toFixed(0)}</span> | 
+            Масштаб: <span style={{color: '#FFD700'}}>{scale.toFixed(2)}x</span>
           </div>
           <button 
             onClick={resetView} 
