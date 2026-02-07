@@ -386,7 +386,7 @@ export default function Home() {
     });
     
     try {
-      await fetch('/api/messages', {
+      const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -396,10 +396,9 @@ export default function Home() {
       });
     } catch (error) {
       console.error('Chat error:', error);
+    } finally {
+      isSendingRef.current = false;
     }
-    
-    isSendingRef.current = false;
-  };
 
   const handleChatKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {

@@ -12,26 +12,7 @@ const pusher = new Pusher({
   useTLS: true,
 });
 
-// GET - получить сообщения
-export async function GET() {
-  try {
-    const chatMessages = await redis.lrange('chat_messages', 0, -1);
-    const messages = chatMessages.map((msg: string) => {
-      try {
-        return JSON.parse(msg);
-      } catch (e) {
-        return null;
-      }
-    }).filter(Boolean);
-    
-    return NextResponse.json({ messages });
-  } catch (e) {
-    console.error('GET chat error:', e);
-    return NextResponse.json({ error: 'Failed to fetch messages' }, { status: 500 });
-  }
-}
-
-// POST - отправить сообщение
+// POST - отправить сообщение (сохраняет в Redis и отправляет через Pusher)
 export async function POST(req: Request) {
   try {
     const body = await req.json();
@@ -52,6 +33,7 @@ export async function POST(req: Request) {
     await redis.lpush('chat_messages', message);
     await redis.ltrim('chat_messages', 0, 99);
     
+    // Отправляем через Pusher
     await pusher.trigger('pixel-channel', 'chat-message', { 
       nickname: nickname || 'Anonymous', 
       text: chatText 
