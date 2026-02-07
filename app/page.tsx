@@ -1212,7 +1212,8 @@ export default function Home() {
           onMouseLeave={handlePixelCanvasMouseLeave}
           style={{
             display: 'block',
-            cursor: (isAdmin && isSpaceDown) ? 'crosshair' : 'pointer'
+            cursor: (isAdmin && isSpaceDown) ? 'crosshair' : 'pointer',
+            imageRendering: 'pixelated'
           }}
         />
         {/* Grid overlay */}
@@ -1223,9 +1224,10 @@ export default function Home() {
           width: '100%',
           height: '100%',
           pointerEvents: 'none',
+          imageRendering: 'pixelated',
           backgroundImage: `
-            linear-gradient(to right, rgba(0,0,0,0.2) 1px, transparent 1px),
-            linear-gradient(to bottom, rgba(0,0,0,0.2) 1px, transparent 1px)
+            linear-gradient(to right, rgba(0,0,0,0.3) 1px, transparent 1px),
+            linear-gradient(to bottom, rgba(0,0,0,0.3) 1px, transparent 1px)
           `,
           backgroundSize: `${pixelScale}px ${pixelScale}px`
         }} />
