@@ -35,7 +35,23 @@ export async function POST(req: Request) {
   try {
     const body = await req.json();
     
-    const { x, y, color, nickname, password, userId, action, targetId } = body;
+    const { x, y, color, nickname, password, userId, action, targetId, text } = body;
+
+    // Чат не требует авторизации
+    if (action === 'chat' && text) {
+      const chatText = text.slice(0, 200);
+      const message = JSON.stringify({ nickname: nickname || 'Anonymous', text: chatText, time: new Date().toISOString() });
+      
+      // Сохраняем в Redis (максимум 100 сообщений)
+      await redis.lpush('chat_messages', message);
+      await redis.ltrim('chat_messages', 0, 99);
+      
+      await pusher.trigger('pixel-channel', 'chat-message', { 
+        nickname: nickname || 'Anonymous', 
+        text: chatText 
+      });
+      return NextResponse.json({ ok: true });
+    }
 
     // Проверяем обязательные поля для аутентификации
     if (!nickname || !password) {
@@ -175,22 +191,6 @@ export async function POST(req: Request) {
       // Обновляем статистику пикселей
       const pixelCountKey = `pixel_count:${nickname}`;
       await redis.incr(pixelCountKey);
-    }
-
-    // ЛОГИКА ЧАТА
-    if (action === 'chat' && body.text) {
-      const text = body.text.slice(0, 200); // Ограничение длины сообщения
-      const message = JSON.stringify({ nickname, text, time: new Date().toISOString() });
-      
-      // Сохраняем в Redis (максимум 100 сообщений)
-      await redis.lpush('chat_messages', message);
-      await redis.ltrim('chat_messages', 0, 99);
-      
-      await pusher.trigger('pixel-channel', 'chat-message', { 
-        nickname, 
-        text 
-      });
-      return NextResponse.json({ ok: true });
     }
 
     return NextResponse.json({ ok: true });

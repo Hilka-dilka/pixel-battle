@@ -380,15 +380,15 @@ export default function Home() {
   // Отправка сообщения в чат
   const sendChatMessage = async (e?: React.FormEvent | React.KeyboardEvent) => {
     if (e) e.preventDefault();
-    if (!chatInput.trim() || isSendingRef.current) return;
+    const text = chatInput.trim();
+    if (!text || isSendingRef.current) return;
     
     isSendingRef.current = true;
-    const textToSend = chatInput.trim();
     setChatInput('');
     
     const newMessage = { 
-      nickname: auth.nick, 
-      text: textToSend, 
+      nickname: auth.nick || 'Anonymous', 
+      text: text, 
       time: new Date().toLocaleTimeString() 
     };
     
@@ -406,8 +406,7 @@ export default function Home() {
         body: JSON.stringify({
           action: 'chat',
           nickname: auth.nick,
-          password: auth.pass,
-          text: textToSend
+          text: text
         }),
       });
     } catch (error) {
