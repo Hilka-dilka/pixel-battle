@@ -12,36 +12,133 @@ const pusher = new Pusher({
   useTLS: true,
 });
 
-// POST - отправить сообщение (сохраняет в Redis и отправляет через Pusher)
+// GET - получить сообщения и мут статус
+export async function GET(req: Request) {
+  try {
+    const { searchParams } = new URL(req.url);
+    const userId = searchParams.get('userId');
+    
+    // Получаем сообщения
+    const chatMessages = await redis.lrange('chat_messages', 0, -1);
+    const messages = chatMessages.map((msg: string) => {
+      try {
+        return JSON.parse(msg);
+      } catch (e) {
+        return null;
+      }
+    }).filter(Boolean);
+    
+    // Проверяем мут для пользователя по userId
+    let isMuted = false;
+    let muteUntil = null;
+    
+    if (userId) {
+      const muteData = await redis.get(`mute:${userId}`);
+      if (muteData) {
+        const mute = typeof muteData === 'string' ? JSON.parse(muteData) : muteData;
+        if (mute.expires > Date.now()) {
+          isMuted = true;
+          muteUntil = mute.expires;
+        } else {
+          await redis.del(`mute:${userId}`);
+        }
+      }
+    }
+    
+    return NextResponse.json({ messages, isMuted, muteUntil });
+  } catch (e) {
+    console.error('GET messages error:', e);
+    return NextResponse.json({ error: 'Failed to fetch messages' }, { status: 500 });
+  }
+}
+
+// POST - отправить сообщение, очистить чат, мут
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { nickname, text } = body;
+    const { nickname, text, action, adminPassword, userId } = body;
     
-    if (!text) {
-      return NextResponse.json({ error: 'Text required' }, { status: 400 });
+    const ADMIN_PASS = 'admin123';
+    
+    // Проверка админа
+    if (adminPassword !== ADMIN_PASS) {
+      // Проверка мута для обычных действий по userId
+      if (userId) {
+        const muteData = await redis.get(`mute:${userId}`);
+        if (muteData) {
+          const mute = typeof muteData === 'string' ? JSON.parse(muteData) : muteData;
+          if (mute.expires > Date.now()) {
+            return NextResponse.json({ error: `Вы замьючены до ${new Date(mute.expires).toLocaleTimeString()}` }, { status: 403 });
+          }
+        }
+      }
     }
     
-    const chatText = text.slice(0, 200);
-    const message = JSON.stringify({ 
-      nickname: nickname || 'Anonymous', 
-      text: chatText, 
-      time: new Date().toISOString() 
-    });
+    // Очистка чата (только для админа)
+    if (action === 'clear_chat') {
+      if (adminPassword !== ADMIN_PASS) {
+        return NextResponse.json({ error: 'Недостаточно прав' }, { status: 403 });
+      }
+      await redis.del('chat_messages');
+      return NextResponse.json({ ok: true, message: 'Чат очищен' });
+    }
     
-    // Сохраняем в Redis (максимум 100 сообщений)
-    await redis.lpush('chat_messages', message);
-    await redis.ltrim('chat_messages', 0, 99);
+    // Мут пользователя по userId (только для админа)
+    if (action === 'mute') {
+      if (adminPassword !== ADMIN_PASS) {
+        return NextResponse.json({ error: 'Недостаточно прав' }, { status: 403 });
+      }
+      const { targetId, duration } = body; // duration в минутах
+      if (!targetId || !duration) {
+        return NextResponse.json({ error: 'Укажите ID и длительность' }, { status: 400 });
+      }
+      const expires = Date.now() + (duration * 60 * 1000);
+      await redis.set(`mute:${targetId}`, JSON.stringify({ expires, by: nickname }));
+      return NextResponse.json({ ok: true, message: `${targetId} замьючен на ${duration} мин` });
+    }
     
-    // Отправляем через Pusher
-    await pusher.trigger('pixel-channel', 'chat-message', { 
-      nickname: nickname || 'Anonymous', 
-      text: chatText 
-    });
+    // Размут пользователя по userId (только для админа)
+    if (action === 'unmute') {
+      if (adminPassword !== ADMIN_PASS) {
+        return NextResponse.json({ error: 'Недостаточно прав' }, { status: 403 });
+      }
+      const { targetId } = body;
+      if (!targetId) {
+        return NextResponse.json({ error: 'Укажите ID' }, { status: 400 });
+      }
+      await redis.del(`mute:${targetId}`);
+      return NextResponse.json({ ok: true, message: `${targetId} размьючен` });
+    }
     
-    return NextResponse.json({ ok: true });
+    // Отправка сообщения
+    if (action === 'send') {
+      if (!text) {
+        return NextResponse.json({ error: 'Text required' }, { status: 400 });
+      }
+      
+      const chatText = text.slice(0, 200);
+      const message = JSON.stringify({ 
+        nickname: nickname || 'Anonymous', 
+        text: chatText, 
+        time: new Date().toISOString() 
+      });
+      
+      // Сохраняем в Redis (максимум 100 сообщений)
+      await redis.lpush('chat_messages', message);
+      await redis.ltrim('chat_messages', 0, 99);
+      
+      // Отправляем через Pusher
+      await pusher.trigger('pixel-channel', 'chat-message', { 
+        nickname: nickname || 'Anonymous', 
+        text: chatText 
+      });
+      
+      return NextResponse.json({ ok: true });
+    }
+    
+    return NextResponse.json({ error: 'Unknown action' }, { status: 400 });
   } catch (e) {
     console.error('POST chat error:', e);
-    return NextResponse.json({ error: 'Failed to send message' }, { status: 500 });
+    return NextResponse.json({ error: 'Failed to process request' }, { status: 500 });
   }
 }

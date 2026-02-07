@@ -39,6 +39,8 @@ export default function Home() {
   
   const [chatMessages, setChatMessages] = useState<{nickname: string, text: string, time: string}[]>([]);
   const [chatInput, setChatInput] = useState('');
+  const [chatMuteInput, setChatMuteInput] = useState('');
+  const [chatMuteDuration, setChatMuteDuration] = useState('5');
   const isSendingRef = useRef(false);
   const chatLoadedRef = useRef(false);
 
@@ -376,6 +378,40 @@ export default function Home() {
     }
   };
 
+  const chatAdminAction = async (action: string, data?: any) => {
+    try {
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...data,
+          action,
+          adminPassword: 'admin123'
+        }),
+      });
+      
+      const result = await res.json();
+      if (res.ok) {
+        if (action === 'clear_chat') {
+          setChatMessages([]);
+          localStorage.removeItem('chat_messages');
+          alert('Чат очищен!');
+        }
+        if (action === 'mute') {
+          alert(`${data.targetNickname} замьючен на ${data.duration} мин`);
+        }
+        if (action === 'unmute') {
+          alert(`${data.targetNickname} размьючен`);
+        }
+      } else {
+        alert(result.error || 'Ошибка');
+      }
+    } catch (error) {
+      console.error('Chat admin action error:', error);
+      alert('Error performing chat admin action');
+    }
+  };
+
   const sendChatMessage = async (e?: React.FormEvent | React.KeyboardEvent) => {
     if (e) e.preventDefault();
     const text = chatInput.trim();
@@ -573,7 +609,22 @@ export default function Home() {
           </div>
           <input placeholder="ID для бана" value={banInput} onChange={e => setBanInput(e.target.value)} style={{ width: '100%', marginBottom: '5px', padding: '6px', background: '#222', border: '1px solid #444', color: '#fff', borderRadius: '4px' }} />
           <button onClick={() => adminAction('ban')} style={{ width: '100%', backgroundColor: '#FFD700', color: '#000', marginBottom: '10px', padding: '8px', border: 'none', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer' }}>ЗАБАНИТЬ ПО ID</button>
-          <button onClick={() => { if(confirm('Очистить поле?')) adminAction('clear_all') }} style={{ width: '100%', backgroundColor: '#333', color: '#fff', padding: '8px', border: '1px solid #444', borderRadius: '4px', cursor: 'pointer' }}>ОЧИСТИТЬ ПОЛЕ</button>
+          <button onClick={() => { if(confirm('Очистить поле?')) adminAction('clear_all') }} style={{ width: '100%', backgroundColor: '#333', color: '#fff', padding: '8px', border: '1px solid #444', borderRadius: '4px', cursor: 'pointer', marginBottom: '10px' }}>ОЧИСТИТЬ ПОЛЕ</button>
+          
+          <div style={{ borderTop: '1px solid #444', margin: '10px 0' }} />
+          
+          <div style={{ fontSize: '10px', color: '#FFD700', marginBottom: '5px' }}>ЧАТ УПРАВЛЕНИЕ</div>
+          <button onClick={() => { if(confirm('Очистить чат?')) chatAdminAction('clear_chat') }} style={{ width: '100%', backgroundColor: '#ff4444', color: '#fff', padding: '8px', border: 'none', borderRadius: '4px', cursor: 'pointer', marginBottom: '5px' }}>ОЧИСТИТЬ ЧАТ</button>
+          
+          <div style={{ display: 'flex', gap: '5px', marginBottom: '5px' }}>
+            <input placeholder="ID (gen_ник)" value={chatMuteInput} onChange={e => setChatMuteInput(e.target.value)} style={{ flex: 1, padding: '6px', background: '#222', border: '1px solid #444', color: '#fff', borderRadius: '4px' }} />
+            <input type="number" placeholder="Мин" value={chatMuteDuration} onChange={e => setChatMuteDuration(e.target.value)} style={{ width: '60px', padding: '6px', background: '#222', border: '1px solid #444', color: '#fff', borderRadius: '4px' }} />
+          </div>
+          
+          <div style={{ display: 'flex', gap: '5px' }}>
+            <button onClick={() => { if(chatMuteInput && chatMuteDuration) { chatAdminAction('mute', { targetId: chatMuteInput, duration: parseInt(chatMuteDuration) }); setChatMuteInput(''); } }} style={{ flex: 1, backgroundColor: '#ff6600', color: '#fff', padding: '8px', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '10px' }}>МУТ</button>
+            <button onClick={() => { if(chatMuteInput) { chatAdminAction('unmute', { targetId: chatMuteInput }); setChatMuteInput(''); } }} style={{ flex: 1, backgroundColor: '#4CAF50', color: '#fff', padding: '8px', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '10px' }}>РАЗМУТ</button>
+          </div>
         </div>
       )}
 
@@ -908,7 +959,7 @@ export default function Home() {
           <div style={{ 
             width: `${cooldown}%`, 
             height: '100%', 
-            backgroundColor: cooldown === 100 ? '#FFD700' : '#FFD700',
+            backgroundColor: cooldown === 100 ? '#4CAF50' : '#FFD700',
             transition: 'width 0.1s linear, background-color 0.3s ease'
           }} />
           <div style={{
@@ -917,7 +968,7 @@ export default function Home() {
             left: '50%',
             transform: 'translateX(-50%)',
             fontSize: '12px',
-            color: cooldown === 100 ? '#FFD700' : '#FFD700',
+            color: cooldown === 100 ? '#4CAF50' : '#FFD700',
             whiteSpace: 'nowrap',
             fontWeight: 'bold',
             textShadow: '0 1px 2px rgba(0,0,0,0.8)'
