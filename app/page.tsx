@@ -433,12 +433,15 @@ export default function Home() {
     });
     
     try {
+      const userId = localStorage.getItem('p_id') || '';
       await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           nickname: auth.nick,
-          text: text
+          text: text,
+          action: 'send',
+          userId: userId
         }),
       });
     } catch (error) {
