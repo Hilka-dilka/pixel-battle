@@ -69,6 +69,16 @@ export default function Home() {
       checkAuth(savedNick, savedPass);
     }
 
+    // Загружаем сообщения чата из localStorage
+    const savedChat = localStorage.getItem('chat_messages');
+    if (savedChat) {
+      try {
+        setChatMessages(JSON.parse(savedChat));
+      } catch (e) {
+        console.error('Failed to load chat:', e);
+      }
+    }
+
     // Загрузка полотна
     fetch('/api/pixels')
       .then(res => {
@@ -358,9 +368,22 @@ const loadPlayerStats = async () => {
   };
 
   // Отправка сообщения в чат
-  const sendChatMessage = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const sendChatMessage = async (e?: React.FormEvent | React.KeyboardEvent) => {
+    if (e) e.preventDefault();
     if (!chatInput.trim()) return;
+    
+    const newMessage = { 
+      nickname: auth.nick, 
+      text: chatInput.trim(), 
+      time: new Date().toLocaleTimeString() 
+    };
+    
+    // Локальное отображение сразу
+    setChatMessages(prev => {
+      const updated = [...prev, newMessage];
+      localStorage.setItem('chat_messages', JSON.stringify(updated.slice(-100))); // Сохраняем последние 100 сообщений
+      return updated.slice(-100);
+    });
     
     try {
       await fetch('/api/pixels', {
@@ -370,12 +393,21 @@ const loadPlayerStats = async () => {
           action: 'chat',
           nickname: auth.nick,
           password: auth.pass,
-          text: chatInput.trim()
+          text: newMessage.text
         }),
       });
-      setChatInput('');
     } catch (error) {
       console.error('Chat error:', error);
+    }
+    
+    setChatInput('');
+  };
+
+  // Обработка Enter и пробела в чате
+  const handleChatKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      sendChatMessage();
     }
   };
 
@@ -471,8 +503,8 @@ const loadPlayerStats = async () => {
   if (!isAuthOk) {
     return (
       <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', backgroundColor: '#121212', color: '#fff' }}>
-        <form onSubmit={handleAuthSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '10px', padding: '30px', background: '#1e1e1e', borderRadius: '10px', width: '300px' }}>
-          <h2>Pixel Battle</h2>
+        <form onSubmit={handleAuthSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '10px', padding: '30px', background: '#1a1a1a', borderRadius: '10px', width: '300px', border: '2px solid #FFD700' }}>
+          <h2 style={{ color: '#FFD700', textAlign: 'center', margin: '0 0 10px 0' }}>Pixel Battle</h2>
           {authError && (
             <div style={{ color: '#ff4444', fontSize: '14px', padding: '8px', background: '#2a1a1a', borderRadius: '4px' }}>
               {authError}
@@ -482,7 +514,7 @@ const loadPlayerStats = async () => {
             placeholder="Ник" 
             value={auth.nick} 
             onChange={e => setAuth({...auth, nick: e.target.value})} 
-            style={{ padding: '10px' }} 
+            style={{ padding: '10px', borderRadius: '4px', border: '1px solid #444', background: '#222', color: '#fff' }} 
             required
           />
           <input 
@@ -490,13 +522,13 @@ const loadPlayerStats = async () => {
             placeholder="Пароль" 
             value={auth.pass} 
             onChange={e => setAuth({...auth, pass: e.target.value})} 
-            style={{ padding: '10px' }} 
+            style={{ padding: '10px', borderRadius: '4px', border: '1px solid #444', background: '#222', color: '#fff' }} 
             required
           />
-          <div style={{ fontSize: '12px', color: '#aaa', marginTop: '-5px' }}>
+          <div style={{ fontSize: '12px', color: '#FFD700', marginTop: '-5px' }}>
             {auth.nick.toLowerCase() === 'admin' ? 'Введите пароль админа' : 'Создаст аккаунт, если не существует'}
           </div>
-          <button type="submit" style={{ padding: '10px', backgroundColor: '#4CAF50', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>
+          <button type="submit" style={{ padding: '10px', backgroundColor: '#FFD700', color: '#000', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>
             Войти
           </button>
         </form>
@@ -525,21 +557,21 @@ const loadPlayerStats = async () => {
       
       {/* ПАНЕЛЬ АДМИНА (только для админа) */}
       {isAdmin && (
-        <div style={{ position: 'fixed', left: 10, top: 10, width: '220px', background: '#1e1e1e', padding: '15px', borderRadius: '10px', border: '2px solid gold', fontSize: '11px', zIndex: 2000 }}>
-          <h4 style={{ color: 'gold', margin: '0 0 10px 0' }}>ADMIN PANEL</h4>
+        <div style={{ position: 'fixed', left: 10, top: 10, width: '220px', background: '#1a1a1a', padding: '15px', borderRadius: '10px', border: '2px solid #FFD700', fontSize: '11px', zIndex: 2000 }}>
+          <h4 style={{ color: '#FFD700', margin: '0 0 10px 0' }}>ADMIN PANEL</h4>
           <div style={{ fontSize: '10px', color: '#ccc', marginBottom: '10px', padding: '5px', background: '#222', borderRadius: '3px' }}>
             <div>ЗАЖАТИЕ: {isSpaceDown ? '✔️ ПРОБЕЛ' : '❌ ПРОБЕЛ'}</div>
           </div>
-          <button onClick={() => adminAction('get_users')} style={{ width: '100%', marginBottom: '10px' }}>Обновить статистику</button>
+          <button onClick={() => adminAction('get_users')} style={{ width: '100%', marginBottom: '10px', padding: '8px', background: '#333', border: '1px solid #FFD700', borderRadius: '4px', color: '#FFD700', cursor: 'pointer' }}>Обновить статистику</button>
           <div style={{ maxHeight: '80px', overflowY: 'auto', marginBottom: '10px', background: '#000', padding: '5px' }}>
             <b>Все юзеры:</b> {adminData.users?.join(', ')}
           </div>
-          <div style={{ maxHeight: '80px', overflowY: 'auto', marginBottom: '10px', background: '#000', padding: '5px', border: '1px solid red' }}>
+          <div style={{ maxHeight: '80px', overflowY: 'auto', marginBottom: '10px', background: '#000', padding: '5px', border: '1px solid #ff4444' }}>
             <b style={{ color: '#ff6666' }}>Забаненные ID:</b> {adminData.banned?.join(', ') || 'нет'}
           </div>
-          <input placeholder="ID для бана" value={banInput} onChange={e => setBanInput(e.target.value)} style={{ width: '100%', marginBottom: '5px' }} />
-          <button onClick={() => adminAction('ban')} style={{ width: '100%', backgroundColor: 'red', color: '#fff', marginBottom: '10px' }}>ЗАБАНИТЬ ПО ID</button>
-          <button onClick={() => { if(confirm('Очистить поле?')) adminAction('clear_all') }} style={{ width: '100%', backgroundColor: '#444', color: '#fff' }}>ОЧИСТИТЬ ПОЛЕ</button>
+          <input placeholder="ID для бана" value={banInput} onChange={e => setBanInput(e.target.value)} style={{ width: '100%', marginBottom: '5px', padding: '6px', background: '#222', border: '1px solid #444', color: '#fff', borderRadius: '4px' }} />
+          <button onClick={() => adminAction('ban')} style={{ width: '100%', backgroundColor: '#FFD700', color: '#000', marginBottom: '10px', padding: '8px', border: 'none', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer' }}>ЗАБАНИТЬ ПО ID</button>
+          <button onClick={() => { if(confirm('Очистить поле?')) adminAction('clear_all') }} style={{ width: '100%', backgroundColor: '#333', color: '#fff', padding: '8px', border: '1px solid #444', borderRadius: '4px', cursor: 'pointer' }}>ОЧИСТИТЬ ПОЛЕ</button>
         </div>
       )}
 
@@ -556,11 +588,11 @@ const loadPlayerStats = async () => {
       }}>
         {/* ИНФОРМАЦИЯ О ТЕКУЩЕМ ПОЛЬЗОВАТЕЛЕ */}
         <div style={{ 
-          background: 'rgba(30, 30, 30, 0.95)',
+          background: '#1a1a1a',
           padding: '12px',
           borderRadius: '8px',
-          border: `1px solid ${isAdmin ? 'gold' : '#444'}`,
-          boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
+          border: `2px solid ${isAdmin ? '#FFD700' : '#FFD700'}`,
+          boxShadow: '0 4px 12px rgba(255, 215, 0, 0.3)',
           display: 'flex',
           alignItems: 'center',
           gap: '8px'
@@ -569,8 +601,8 @@ const loadPlayerStats = async () => {
           <button
             onClick={() => { setStatsOpen(!statsOpen); setChatOpen(false); }}
             style={{
-              background: statsOpen ? '#4CAF50' : '#333',
-              border: '1px solid #555',
+              background: statsOpen ? '#FFD700' : '#333',
+              border: '1px solid #FFD700',
               borderRadius: '4px',
               padding: '6px',
               cursor: 'pointer',
@@ -586,7 +618,7 @@ const loadPlayerStats = async () => {
           {/* Никнейм */}
           <span style={{ 
             fontSize: '14px',
-            color: isAdmin ? 'gold' : '#4CAF50',
+            color: isAdmin ? '#FFD700' : '#4CAF50',
             fontWeight: 'bold',
             flex: 1
           }}>
@@ -597,8 +629,8 @@ const loadPlayerStats = async () => {
           <button
             onClick={() => { setChatOpen(!chatOpen); setStatsOpen(false); }}
             style={{
-              background: chatOpen ? '#4CAF50' : '#333',
-              border: '1px solid #555',
+              background: chatOpen ? '#FFD700' : '#333',
+              border: '1px solid #FFD700',
               borderRadius: '4px',
               padding: '6px',
               cursor: 'pointer',
@@ -618,9 +650,9 @@ const loadPlayerStats = async () => {
               fontSize: '11px', 
               padding: '6px 10px',
               backgroundColor: '#333',
-              border: '1px solid #555',
+              border: '1px solid #FFD700',
               borderRadius: '4px',
-              color: '#fff',
+              color: '#FFD700',
               cursor: 'pointer'
             }}
           >
@@ -631,26 +663,27 @@ const loadPlayerStats = async () => {
         {/* МЕНЮ СТАТИСТИКИ */}
         {statsOpen && (
           <div style={{ 
-            background: 'rgba(30, 30, 30, 0.95)',
+            background: '#1a1a1a',
             padding: '12px',
             borderRadius: '8px',
-            border: `1px solid ${isAdmin ? 'gold' : '#444'}`,
-            boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
+            border: `2px solid ${isAdmin ? '#FFD700' : '#FFD700'}`,
+            boxShadow: '0 4px 12px rgba(255, 215, 0, 0.3)',
             animation: 'fadeIn 0.3s ease'
           }}>
           {/* СТАТИСТИКА ОНЛАЙН */}
           <div style={{ 
             fontSize: '11px', 
-            color: '#aaa',
-            padding: '6px',
+            color: '#FFD700',
+            padding: '8px',
             background: '#222',
             borderRadius: '4px',
             marginBottom: '8px',
-            textAlign: 'center'
+            textAlign: 'center',
+            border: '1px solid #FFD700'
           }}>
             <span style={{ color: '#4CAF50' }}>🟢 Онлайн: {onlineCount} игроков</span>
             {!isAdmin && (
-              <span style={{ marginLeft: '10px', color: '#FF9800' }}>
+              <span style={{ marginLeft: '10px', color: '#FFD700' }}>
                 Ваши пиксели: {playerStats.find(p => p.nickname === auth.nick)?.pixelsCount || 0}
               </span>
             )}
@@ -670,7 +703,7 @@ const loadPlayerStats = async () => {
               borderRadius: '3px',
               marginBottom: '5px',
               fontWeight: 'bold',
-              color: '#4CAF50'
+              color: '#FFD700'
             }}>
               <span>Игрок</span>
               <span>Пиксели</span>
@@ -701,7 +734,7 @@ const loadPlayerStats = async () => {
                     {player.nickname}
                   </span>
                   <span style={{ 
-                    color: player.pixelsCount > 0 ? '#FF9800' : '#aaa',
+                    color: player.pixelsCount > 0 ? '#FFD700' : '#aaa',
                     fontWeight: 'bold'
                   }}>
                     {player.pixelsCount}
@@ -733,11 +766,11 @@ const loadPlayerStats = async () => {
             style={{
               width: '100%',
               fontSize: '10px',
-              padding: '6px',
+              padding: '8px',
               backgroundColor: loadingStats ? '#555' : '#333',
-              border: '1px solid #444',
+              border: '1px solid #FFD700',
               borderRadius: '4px',
-              color: '#fff',
+              color: '#FFD700',
               cursor: loadingStats ? 'not-allowed' : 'pointer',
               marginTop: '8px',
               opacity: loadingStats ? 0.7 : 1
@@ -754,8 +787,8 @@ const loadPlayerStats = async () => {
             background: 'rgba(30, 30, 30, 0.95)',
             padding: '12px',
             borderRadius: '8px',
-            border: '1px solid #444',
-            boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
+            border: '2px solid #FFD700',
+            boxShadow: '0 4px 12px rgba(255, 215, 0, 0.3)',
             animation: 'fadeIn 0.3s ease'
           }}>
             {/* Список сообщений */}
@@ -774,7 +807,7 @@ const loadPlayerStats = async () => {
                       background: '#222',
                       borderRadius: '4px',
                       marginBottom: '5px',
-                      borderLeft: `3px solid ${msg.nickname === auth.nick ? '#4CAF50' : '#2196F3'}`
+                      borderLeft: `3px solid ${msg.nickname === auth.nick ? '#FFD700' : '#FFD700'}`
                     }}
                   >
                     <div style={{ 
@@ -783,12 +816,12 @@ const loadPlayerStats = async () => {
                       marginBottom: '4px'
                     }}>
                       <span style={{ 
-                        color: msg.nickname === auth.nick ? '#4CAF50' : '#2196F3',
+                        color: msg.nickname === auth.nick ? '#FFD700' : '#FFD700',
                         fontWeight: 'bold'
                       }}>
                         {msg.nickname === auth.nick ? 'Вы' : msg.nickname}
                       </span>
-                      <span style={{ color: '#666', fontSize: '10px' }}>
+                      <span style={{ color: '#FFD700', fontSize: '10px' }}>
                         {msg.time}
                       </span>
                     </div>
@@ -815,27 +848,29 @@ const loadPlayerStats = async () => {
                 type="text"
                 value={chatInput}
                 onChange={(e) => setChatInput(e.target.value)}
+                onKeyDown={handleChatKeyDown}
                 placeholder="Сообщение..."
                 style={{
                   flex: 1,
-                  padding: '8px',
+                  padding: '10px',
                   borderRadius: '4px',
-                  border: '1px solid #444',
-                  background: '#222',
+                  border: '1px solid #FFD700',
+                  background: '#1a1a1a',
                   color: '#fff',
-                  fontSize: '11px'
+                  fontSize: '12px'
                 }}
               />
               <button 
                 type="submit"
                 style={{
-                  padding: '8px 12px',
-                  backgroundColor: '#4CAF50',
+                  padding: '10px 14px',
+                  backgroundColor: '#FFD700',
                   border: 'none',
                   borderRadius: '4px',
-                  color: '#fff',
+                  color: '#000',
                   cursor: 'pointer',
-                  fontSize: '11px'
+                  fontSize: '12px',
+                  fontWeight: 'bold'
                 }}
               >
                 →
@@ -886,7 +921,7 @@ const loadPlayerStats = async () => {
           <div style={{ 
             width: `${cooldown}%`, 
             height: '100%', 
-            backgroundColor: cooldown === 100 ? '#4CAF50' : '#FF9800',
+            backgroundColor: cooldown === 100 ? '#FFD700' : '#FFD700',
             transition: 'width 0.1s linear, background-color 0.3s ease'
           }} />
           <div style={{
@@ -895,7 +930,7 @@ const loadPlayerStats = async () => {
             left: '50%',
             transform: 'translateX(-50%)',
             fontSize: '12px',
-            color: cooldown === 100 ? '#4CAF50' : '#FF9800',
+            color: cooldown === 100 ? '#FFD700' : '#FFD700',
             whiteSpace: 'nowrap',
             fontWeight: 'bold',
             textShadow: '0 1px 2px rgba(0,0,0,0.8)'
@@ -917,8 +952,8 @@ const loadPlayerStats = async () => {
         backgroundColor: 'rgba(20, 20, 20, 0.95)',
         padding: '15px 25px',
         borderRadius: '15px',
-        border: '2px solid #444',
-        boxShadow: '0 6px 20px rgba(0,0,0,0.7)',
+        border: '2px solid #FFD700',
+        boxShadow: '0 6px 20px rgba(255, 215, 0, 0.3)',
         alignItems: 'center'
       }}>
         <div style={{ 
@@ -1069,14 +1104,14 @@ const loadPlayerStats = async () => {
         padding: '10px 12px', 
         borderRadius: '6px',
         fontSize: '12px',
-        border: '1px solid #444',
+        border: '1px solid #FFD700',
         zIndex: 2000,
-        boxShadow: '0 3px 10px rgba(0,0,0,0.5)'
+        boxShadow: '0 3px 10px rgba(255, 215, 0, 0.3)'
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <div style={{ color: '#aaa' }}>
-            Камера: <span style={{color: '#4CAF50'}}>x:{offset.x.toFixed(0)} y:{offset.y.toFixed(0)}</span> | 
-            Масштаб: <span style={{color: '#4CAF50'}}>{scale.toFixed(2)}x</span>
+          <div style={{ color: '#FFD700' }}>
+            Камера: <span style={{color: '#FFD700'}}>x:{offset.x.toFixed(0)} y:{offset.y.toFixed(0)}</span> | 
+            Масштаб: <span style={{color: '#FFD700'}}>{scale.toFixed(2)}x</span>
           </div>
           <button 
             onClick={resetView} 
@@ -1084,8 +1119,8 @@ const loadPlayerStats = async () => {
               padding: '3px 10px', 
               fontSize: '11px', 
               backgroundColor: '#333', 
-              color: '#fff',
-              border: '1px solid #555',
+              color: '#FFD700',
+              border: '1px solid #FFD700',
               borderRadius: '4px',
               cursor: 'pointer',
               fontWeight: 'bold'
