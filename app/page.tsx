@@ -232,8 +232,10 @@ export default function Home() {
           }
         }
         setPixels(parsed);
-        if (typeof data.canvasVisible === 'boolean') {
-          setCanvasVisible(data.canvasVisible);
+        // Если canvasVisible явно false (от админа), используем это значение
+        // Если null или undefined, оставляем default true
+        if (data.canvasVisible === false) {
+          setCanvasVisible(false);
         }
       })
       .catch(err => console.error('Failed to load pixels:', err));

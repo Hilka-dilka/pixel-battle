@@ -27,7 +27,7 @@ export async function GET() {
     return NextResponse.json({
       pixels: pixels || {},
       chatMessages: chatMessages || [],
-      canvasVisible: canvasVisible !== '0'
+      canvasVisible: canvasVisible === null ? null : canvasVisible !== '0'
     });
   } catch (e) {
     console.error('GET error:', e);
