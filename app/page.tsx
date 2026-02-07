@@ -43,6 +43,7 @@ export default function Home() {
   // Состояния чата
   const [chatMessages, setChatMessages] = useState<{nickname: string, text: string, time: string}[]>([]);
   const [chatInput, setChatInput] = useState('');
+  const isSendingRef = useRef(false);
 
   // Состояние для перемещения и зума
   const [offset, setOffset] = useState({ x: 0, y: 0 });
@@ -69,34 +70,38 @@ export default function Home() {
       checkAuth(savedNick, savedPass);
     }
 
-    // Загружаем сообщения чата из localStorage
-    const savedChat = localStorage.getItem('chat_messages');
-    if (savedChat) {
-      try {
-        setChatMessages(JSON.parse(savedChat));
-      } catch (e) {
-        console.error('Failed to load chat:', e);
-      }
-    }
-
-    // Загрузка полотна
+    // Загружаем сообщения чата и полотно с сервера
     fetch('/api/pixels')
       .then(res => {
         if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
         return res.json();
       })
       .then(data => {
+        // Загружаем пиксели
         const parsed: any = {};
-        for (const k in data) {
+        for (const k in data.pixels || {}) {
           try { 
-            parsed[k] = typeof data[k] === 'string' ? JSON.parse(data[k]) : data[k]; 
+            parsed[k] = typeof data.pixels[k] === 'string' ? JSON.parse(data.pixels[k]) : data.pixels[k]; 
           } catch(e) { 
-            parsed[k] = { color: data[k], user: '???' }; 
+            parsed[k] = { color: data.pixels[k], user: '???' }; 
           }
         }
         setPixels(parsed);
+        
+        // Загружаем сообщения чата
+        if (data.chatMessages && Array.isArray(data.chatMessages)) {
+          const messages = data.chatMessages.map((msg: string) => {
+            try {
+              return JSON.parse(msg);
+            } catch (e) {
+              return null;
+            }
+          }).filter(Boolean);
+          setChatMessages(messages);
+          localStorage.setItem('chat_messages', JSON.stringify(messages));
+        }
       })
-      .catch(err => console.error('Failed to load pixels:', err));
+      .catch(err => console.error('Failed to load data:', err));
 
     // Pusher
     const pusher = new Pusher("428b10fa704e1012072a", { cluster: "eu" });
@@ -107,11 +112,16 @@ export default function Home() {
     });
 
     channel.bind('chat-message', (update: any) => {
-      setChatMessages(prev => [...prev, { 
-        nickname: update.nickname, 
-        text: update.text, 
-        time: new Date().toLocaleTimeString() 
-      }]);
+      setChatMessages(prev => {
+        const newMsg = { 
+          nickname: update.nickname, 
+          text: update.text, 
+          time: new Date().toLocaleTimeString() 
+        };
+        const updated = [...prev, newMsg];
+        localStorage.setItem('chat_messages', JSON.stringify(updated.slice(-100)));
+        return updated.slice(-100);
+      });
     });
 
     channel.bind('clear', () => setPixels({}));
@@ -163,73 +173,73 @@ export default function Home() {
   }, [isAdmin]);
 
   // Загрузка статистики игроков (для всех пользователей)
-const loadPlayerStats = async () => {
-  setLoadingStats(true);
-  try {
-    const res = await fetch('/api/pixels', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ 
-        nickname: auth.nick, 
-        password: auth.pass,
-        action: isAdmin ? 'get_users' : 'get_stats' 
-      }),
-    });
-    
-    if (res.ok) {
-      const data = await res.json();
+  const loadPlayerStats = async () => {
+    setLoadingStats(true);
+    try {
+      const res = await fetch('/api/pixels', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          nickname: auth.nick, 
+          password: auth.pass,
+          action: isAdmin ? 'get_users' : 'get_stats' 
+        }),
+      });
       
-      // Для админа сохраняем полные данные
-      if (isAdmin) {
-        setAdminData({
-          users: data.users || [],
-          banned: data.banned || [],
-          userStats: data.userStats || {},
-          onlineUsers: data.onlineUsers || []
-        });
+      if (res.ok) {
+        const data = await res.json();
+        
+        // Для админа сохраняем полные данные
+        if (isAdmin) {
+          setAdminData({
+            users: data.users || [],
+            banned: data.banned || [],
+            userStats: data.userStats || {},
+            onlineUsers: data.onlineUsers || []
+          });
+        }
+        
+        // Для всех пользователей формируем статистику
+        const userStats: Record<string, number> = data.userStats || {};
+        const onlineUsers: string[] = data.onlineUsers || [];
+        
+        // Собираем всех пользователей из разных источников
+        const allUsersSet = new Set<string>();
+        
+        // Добавляем пользователей из userStats
+        Object.keys(userStats).forEach((user: string) => allUsersSet.add(user));
+        
+        // Добавляем онлайн пользователей
+        onlineUsers.forEach((user: string) => allUsersSet.add(user));
+        
+        // Для админа добавляем всех зарегистрированных пользователей
+        if (isAdmin && data.users) {
+          (data.users as string[]).forEach((user: string) => allUsersSet.add(user));
+        }
+        
+        // Формируем статистику игроков
+        const stats: PlayerStats[] = Array.from(allUsersSet)
+          .filter((user: string) => user && user !== 'admin')
+          .map((user: string) => ({
+            nickname: user,
+            pixelsCount: userStats[user] || 0,
+            isOnline: onlineUsers.includes(user)
+          }));
+        
+        // Сортируем по количеству пикселей (по убыванию)
+        stats.sort((a: PlayerStats, b: PlayerStats) => b.pixelsCount - a.pixelsCount);
+        setPlayerStats(stats);
+        setOnlineCount(onlineUsers.length);
+      } else {
+        const errorData = await res.json().catch(() => ({}));
+        console.error('Failed to load stats:', errorData);
       }
-      
-      // Для всех пользователей формируем статистику
-      const userStats: Record<string, number> = data.userStats || {};
-      const onlineUsers: string[] = data.onlineUsers || [];
-      
-      // Собираем всех пользователей из разных источников
-      const allUsersSet = new Set<string>();
-      
-      // Добавляем пользователей из userStats
-      Object.keys(userStats).forEach((user: string) => allUsersSet.add(user));
-      
-      // Добавляем онлайн пользователей
-      onlineUsers.forEach((user: string) => allUsersSet.add(user));
-      
-      // Для админа добавляем всех зарегистрированных пользователей
-      if (isAdmin && data.users) {
-        (data.users as string[]).forEach((user: string) => allUsersSet.add(user));
-      }
-      
-      // Формируем статистику игроков
-      const stats: PlayerStats[] = Array.from(allUsersSet)
-        .filter((user: string) => user && user !== 'admin')
-        .map((user: string) => ({
-          nickname: user,
-          pixelsCount: userStats[user] || 0,
-          isOnline: onlineUsers.includes(user)
-        }));
-      
-      // Сортируем по количеству пикселей (по убыванию)
-      stats.sort((a: PlayerStats, b: PlayerStats) => b.pixelsCount - a.pixelsCount);
-      setPlayerStats(stats);
-      setOnlineCount(onlineUsers.length);
-    } else {
-      const errorData = await res.json().catch(() => ({}));
-      console.error('Failed to load stats:', errorData);
+    } catch (error) {
+      console.error('Failed to load player stats:', error);
+    } finally {
+      setLoadingStats(false);
     }
-  } catch (error) {
-    console.error('Failed to load player stats:', error);
-  } finally {
-    setLoadingStats(false);
-  }
-};
+  };
 
   // Автоматическое обновление статистики для всех
   useEffect(() => {
@@ -370,18 +380,22 @@ const loadPlayerStats = async () => {
   // Отправка сообщения в чат
   const sendChatMessage = async (e?: React.FormEvent | React.KeyboardEvent) => {
     if (e) e.preventDefault();
-    if (!chatInput.trim()) return;
+    if (!chatInput.trim() || isSendingRef.current) return;
+    
+    isSendingRef.current = true;
+    const textToSend = chatInput.trim();
+    setChatInput('');
     
     const newMessage = { 
       nickname: auth.nick, 
-      text: chatInput.trim(), 
+      text: textToSend, 
       time: new Date().toLocaleTimeString() 
     };
     
     // Локальное отображение сразу
     setChatMessages(prev => {
       const updated = [...prev, newMessage];
-      localStorage.setItem('chat_messages', JSON.stringify(updated.slice(-100))); // Сохраняем последние 100 сообщений
+      localStorage.setItem('chat_messages', JSON.stringify(updated.slice(-100)));
       return updated.slice(-100);
     });
     
@@ -393,14 +407,14 @@ const loadPlayerStats = async () => {
           action: 'chat',
           nickname: auth.nick,
           password: auth.pass,
-          text: newMessage.text
+          text: textToSend
         }),
       });
     } catch (error) {
       console.error('Chat error:', error);
     }
     
-    setChatInput('');
+    isSendingRef.current = false;
   };
 
   // Обработка Enter и пробела в чате
@@ -591,7 +605,7 @@ const loadPlayerStats = async () => {
           background: '#1a1a1a',
           padding: '12px',
           borderRadius: '8px',
-          border: `2px solid ${isAdmin ? '#FFD700' : '#FFD700'}`,
+          border: '2px solid #FFD700',
           boxShadow: '0 4px 12px rgba(255, 215, 0, 0.3)',
           display: 'flex',
           alignItems: 'center',
@@ -666,7 +680,7 @@ const loadPlayerStats = async () => {
             background: '#1a1a1a',
             padding: '12px',
             borderRadius: '8px',
-            border: `2px solid ${isAdmin ? '#FFD700' : '#FFD700'}`,
+            border: '2px solid #FFD700',
             boxShadow: '0 4px 12px rgba(255, 215, 0, 0.3)',
             animation: 'fadeIn 0.3s ease'
           }}>
@@ -784,7 +798,7 @@ const loadPlayerStats = async () => {
         {/* МЕНЮ ЧАТА */}
         {chatOpen && (
           <div style={{ 
-            background: 'rgba(30, 30, 30, 0.95)',
+            background: '#1a1a1a',
             padding: '12px',
             borderRadius: '8px',
             border: '2px solid #FFD700',
@@ -896,7 +910,7 @@ const loadPlayerStats = async () => {
           fontSize: '28px',
           textShadow: '0 2px 8px rgba(0,0,0,0.8)',
           margin: 0,
-          color: '#fff'
+          color: '#FFD700'
         }}>
           PIXEL BATTLE LIVE
         </h1>
@@ -972,7 +986,7 @@ const loadPlayerStats = async () => {
               width: '45px', 
               height: '45px', 
               backgroundColor: c, 
-              border: selectedColor === c ? '4px solid gold' : '3px solid #666', 
+              border: selectedColor === c ? '4px solid #FFD700' : '3px solid #666', 
               cursor: 'pointer', 
               borderRadius: '10px',
               boxShadow: '0 3px 8px rgba(0,0,0,0.5)',
@@ -1063,7 +1077,7 @@ const loadPlayerStats = async () => {
           padding: '12px',
           borderRadius: '6px',
           fontSize: '12px',
-          border: '1px solid gold',
+          border: '1px solid #FFD700',
           zIndex: 3000,
           pointerEvents: 'none',
           boxShadow: '0 5px 20px rgba(0,0,0,0.8)',
@@ -1072,16 +1086,16 @@ const loadPlayerStats = async () => {
           backdropFilter: 'blur(2px)'
         }}>
           <div style={{ marginBottom: '6px' }}>
-            <span style={{color: 'gold', fontWeight: 'bold'}}>Позиция:</span> {hoveredInfo.x}, {hoveredInfo.y}
+            <span style={{color: '#FFD700', fontWeight: 'bold'}}>Позиция:</span> {hoveredInfo.x}, {hoveredInfo.y}
           </div>
           <div style={{ marginBottom: '6px' }}>
-            <span style={{color: 'gold', fontWeight: 'bold'}}>Автор:</span> {String(hoveredInfo.user)}
+            <span style={{color: '#FFD700', fontWeight: 'bold'}}>Автор:</span> {String(hoveredInfo.user)}
           </div>
           <div style={{ marginBottom: '6px' }}>
-            <span style={{color: 'gold', fontWeight: 'bold'}}>ID:</span> {String(hoveredInfo.userId || 'n/a')}
+            <span style={{color: '#FFD700', fontWeight: 'bold'}}>ID:</span> {String(hoveredInfo.userId || 'n/a')}
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span style={{color: 'gold', fontWeight: 'bold'}}>Цвет:</span> 
+            <span style={{color: '#FFD700', fontWeight: 'bold'}}>Цвет:</span> 
             <div style={{ 
               width: '20px', 
               height: '20px', 

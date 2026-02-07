@@ -15,11 +15,19 @@ const pusher = new Pusher({
 
 export async function GET() {
   try {
+    // Получаем пиксели
     const pixels = await redis.hgetall('board');
-    return NextResponse.json(pixels || {});
+    
+    // Получаем сообщения чата
+    const chatMessages = await redis.lrange('chat_messages', 0, -1);
+    
+    return NextResponse.json({
+      pixels: pixels || {},
+      chatMessages: chatMessages || []
+    });
   } catch (e) {
     console.error('GET error:', e);
-    return NextResponse.json({ error: 'Failed to fetch pixels' }, { status: 500 });
+    return NextResponse.json({ error: 'Failed to fetch data' }, { status: 500 });
   }
 }
 
@@ -172,6 +180,12 @@ export async function POST(req: Request) {
     // ЛОГИКА ЧАТА
     if (action === 'chat' && body.text) {
       const text = body.text.slice(0, 200); // Ограничение длины сообщения
+      const message = JSON.stringify({ nickname, text, time: new Date().toISOString() });
+      
+      // Сохраняем в Redis (максимум 100 сообщений)
+      await redis.lpush('chat_messages', message);
+      await redis.ltrim('chat_messages', 0, 99);
+      
       await pusher.trigger('pixel-channel', 'chat-message', { 
         nickname, 
         text 
