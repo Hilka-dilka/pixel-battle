@@ -981,7 +981,7 @@ export default function Home() {
       {!isAdmin && (
         <div style={{ 
           position: 'fixed', 
-          bottom: '150px',
+          bottom: '160px',
           left: '50%', 
           transform: 'translateX(-50%)',
           width: '300px', 
@@ -1028,7 +1028,8 @@ export default function Home() {
         gap: '8px',
         flexWrap: 'wrap',
         justifyContent: 'center',
-        maxWidth: '400px'
+        maxWidth: '400px',
+        zIndex: 2000
       }}>
         {['#000000', '#808080', '#ffffff', '#ff0000', '#00fff7', '#006aff', '#001aff', '#00ff8c', '#00ff00', '#a2ff00', '#fff700', '#ff7700', '#8c00ff', '#f700ff', '#ff0099'].map(c => (
           <div 
