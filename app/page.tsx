@@ -58,13 +58,12 @@ export default function Home() {
   const cellSize = 20;
 
   const loadChatMessages = async () => {
-    if (chatLoadedRef.current) return;
-    
+    // Всегда пытаемся загрузить с сервера
     try {
       const res = await fetch('/api/messages');
       if (res.ok) {
         const data = await res.json();
-        if (data.messages) {
+        if (data.messages && data.messages.length > 0) {
           const msgs = data.messages.map((m: any) => ({
             ...m,
             time: new Date(m.time).toLocaleTimeString()
@@ -72,10 +71,25 @@ export default function Home() {
           setChatMessages(msgs);
           localStorage.setItem('chat_messages', JSON.stringify(msgs));
           chatLoadedRef.current = true;
+          return;
         }
       }
     } catch (error) {
-      console.error('Failed to load chat:', error);
+      console.error('Failed to load chat from server:', error);
+    }
+    
+    // Если сервер недоступен или пустой - загружаем из localStorage
+    const saved = localStorage.getItem('chat_messages');
+    if (saved) {
+      try {
+        const msgs = JSON.parse(saved);
+        if (Array.isArray(msgs) && msgs.length > 0) {
+          setChatMessages(msgs);
+          chatLoadedRef.current = true;
+        }
+      } catch (e) {
+        console.error('Failed to parse saved messages:', e);
+      }
     }
   };
 
@@ -171,6 +185,7 @@ export default function Home() {
 
   useEffect(() => {
     if (chatOpen) {
+      chatLoadedRef.current = false; // Сбрасываем флаг чтобы перезагрузить сообщения
       loadChatMessages();
     }
   }, [chatOpen]);
