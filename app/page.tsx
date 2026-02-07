@@ -61,7 +61,7 @@ export default function Home() {
   const dragStartPosRef = useRef<{x: number, y: number} | null>(null);
   const isClickActionRef = useRef<boolean>(true);
   const sizeX = 180;
-  const sizeY = 90;
+  const sizeY = 180;
   const pixelScale = 10;
 
   const drawCanvas = () => {
