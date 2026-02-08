@@ -337,7 +337,13 @@ export default function Home() {
   }, [isAdmin]);
 
   useEffect(() => {
-    if (chatOpen) {
+    // Load chat messages on initial page load
+    chatLoadedRef.current = false;
+    loadChatMessages();
+  }, []);
+
+  useEffect(() => {
+    if (chatOpen && !chatLoadedRef.current) {
       chatLoadedRef.current = false; // Сбрасываем флаг чтобы перезагрузить сообщения
       loadChatMessages();
     }
