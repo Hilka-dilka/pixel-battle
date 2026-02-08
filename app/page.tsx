@@ -593,26 +593,28 @@ export default function Home() {
       
       if (!confirm(`Нарисовать ${pixelsToDraw.length} пикселей?`)) return;
       
-      // Send all pixels to server
-      for (const pixel of pixelsToDraw) {
-        try {
-          const userId = localStorage.getItem('p_id') || 'admin';
-          await fetch('/api/pixels', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              x: pixel.x,
-              y: pixel.y,
-              color: pixel.color,
-              nickname: auth.nick,
-              password: auth.pass,
-              userId
-            }),
-          });
-        } catch (error) {
-          console.error('Failed to draw pixel:', error);
-        }
+      // Send all pixels in parallel batches for speed
+      const userId = localStorage.getItem('p_id') || 'admin';
+      const batchSize = 50; // Send 50 pixels at a time
+      const batches = [];
+      
+      for (let i = 0; i < pixelsToDraw.length; i += batchSize) {
+        batches.push(pixelsToDraw.slice(i, i + batchSize));
       }
+      
+      // Send all batches in parallel
+      await Promise.all(batches.map(batch => 
+        fetch('/api/pixels', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            pixels: batch,
+            nickname: auth.nick,
+            password: auth.pass,
+            userId
+          }),
+        }).catch(error => console.error('Batch failed:', error))
+      ));
       
       alert('Изображение нарисовано!');
       setImagePreview(null);
@@ -940,6 +942,17 @@ export default function Home() {
             >
               🗑️ ОЧИСТИТЬ
             </button>
+          </div>
+          
+          <div style={{ borderTop: '1px solid #444', margin: '8px 0', paddingTop: '8px' }}>
+            <div style={{ fontSize: '10px', color: '#FFD700', marginBottom: '5px' }}>ВСЕ ЮЗЕРЫ</div>
+            <div style={{ maxHeight: '50px', overflowY: 'auto', marginBottom: '5px', background: '#000', padding: '5px', fontSize: '9px', wordBreak: 'break-all' }}>
+              {adminData.users?.join(', ') || 'нет'}
+            </div>
+            <div style={{ fontSize: '10px', color: '#ff6666', marginBottom: '5px' }}>ЗАБАНЕННЫЕ</div>
+            <div style={{ maxHeight: '50px', overflowY: 'auto', background: '#000', padding: '5px', fontSize: '9px', wordBreak: 'break-all', border: '1px solid #ff4444', borderRadius: '4px' }}>
+              {adminData.banned?.join(', ') || 'нет'}
+            </div>
           </div>
           
           {/* Image Upload Section */}

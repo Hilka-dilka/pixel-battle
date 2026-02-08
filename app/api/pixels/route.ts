@@ -39,7 +39,46 @@ export async function POST(req: Request) {
   try {
     const body = await req.json();
     
-    const { x, y, color, nickname, password, userId, action, targetId, text } = body;
+    const { x, y, color, pixels, nickname, password, userId, action, targetId, text } = body;
+
+    // Пакетная отрисовка пикселей (для админа)
+    if (pixels && Array.isArray(pixels) && nickname?.toLowerCase() === 'admin') {
+      const authKey = `auth:${nickname.toLowerCase()}`;
+      const adminPassword = await redis.get('auth:admin') as string | null;
+      
+      if (adminPassword !== password) {
+        return NextResponse.json({ error: 'Invalid admin password' }, { status: 401 });
+      }
+      
+      // Проверяем бан для каждого пикселя
+      if (userId) {
+        const isBanned = await redis.sismember('banned_users', userId);
+        if (isBanned) return NextResponse.json({ error: 'Banned' }, { status: 403 });
+      }
+      
+      // Сохраняем все пиксели
+      const pixelDataToSave: Record<string, string> = {};
+      const pixelNotifications: { key: string; data: any }[] = [];
+      
+      for (const pixel of pixels) {
+        const key = `${pixel.x}-${pixel.y}`;
+        const data = { color: pixel.color, user: nickname, userId: userId || 'admin' };
+        pixelDataToSave[key] = JSON.stringify(data);
+        pixelNotifications.push({ key, data });
+      }
+      
+      // Сохраняем в Redis
+      if (Object.keys(pixelDataToSave).length > 0) {
+        await redis.hset('board', pixelDataToSave);
+      }
+      
+      // Отправляем уведомления (можно пакетами)
+      for (const notification of pixelNotifications) {
+        await pusher.trigger('pixel-channel', 'new-pixel', notification);
+      }
+      
+      return NextResponse.json({ ok: true, count: pixels.length });
+    }
 
     // Чат не требует авторизации
     if (action === 'chat' && text) {
