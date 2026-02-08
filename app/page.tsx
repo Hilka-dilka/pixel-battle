@@ -180,27 +180,25 @@ export default function Home() {
       const res = await fetch('/api/messages');
       if (res.ok) {
         const data = await res.json();
-        if (data.messages && data.messages.length > 0) {
-          const msgs = data.messages.map((m: any) => ({
-            ...m,
-            time: new Date(m.time).toLocaleTimeString()
-          }));
-          setChatMessages(msgs);
-          localStorage.setItem('chat_messages', JSON.stringify(msgs));
-          chatLoadedRef.current = true;
-          return;
-        }
+        const msgs = (data.messages || []).map((m: any) => ({
+          ...m,
+          time: new Date(m.time).toLocaleTimeString()
+        }));
+        setChatMessages(msgs);
+        localStorage.setItem('chat_messages', JSON.stringify(msgs));
+        chatLoadedRef.current = true;
+        return;
       }
     } catch (error) {
       console.error('Failed to load chat from server:', error);
     }
     
-    // Если сервер недоступен или пустой - загружаем из localStorage
+    // Если сервер недоступен - загружаем из localStorage
     const saved = localStorage.getItem('chat_messages');
     if (saved) {
       try {
         const msgs = JSON.parse(saved);
-        if (Array.isArray(msgs) && msgs.length > 0) {
+        if (Array.isArray(msgs)) {
           setChatMessages(msgs);
           chatLoadedRef.current = true;
         }
@@ -672,7 +670,11 @@ export default function Home() {
   const handleCanvasMouseUp = () => {
     setIsDragging(false);
     dragStartPosRef.current = null;
-    isClickActionRef.current = true;
+    // Only reset isClickActionRef to true if we weren't dragging
+    // If we were dragging, keep it false to prevent click
+    if (!isDragging) {
+      isClickActionRef.current = true;
+    }
   };
 
   const handleWheel = (e: React.WheelEvent) => {
