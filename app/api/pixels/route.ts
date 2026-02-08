@@ -231,11 +231,11 @@ export async function POST(req: Request) {
     }
 
     return NextResponse.json({ ok: true });
-  } catch (e) {
+  } catch (e: any) {
     console.error('POST route error:', e);
     return NextResponse.json({ 
       ok: false, 
-      error: 'Internal server error'
+      error: e?.message || 'Internal server error'
     }, { status: 500 });
   }
 }
