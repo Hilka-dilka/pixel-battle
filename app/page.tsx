@@ -44,12 +44,6 @@ export default function Home() {
   const [chatInput, setChatInput] = useState('');
   const [chatMuteInput, setChatMuteInput] = useState('');
   const [chatMuteDuration, setChatMuteDuration] = useState('5');
-  
-  // Image upload state
-  const [imageUploadX, setImageUploadX] = useState('0');
-  const [imageUploadY, setImageUploadY] = useState('0');
-  const [imagePreview, setImagePreview] = useState<string | null>(null);
-  const imageInputRef = useRef<HTMLInputElement>(null);
   const isSendingRef = useRef(false);
   const chatLoadedRef = useRef(false);
   const chatContainerRef = useRef<HTMLDivElement>(null);
@@ -551,94 +545,6 @@ export default function Home() {
     }
   };
 
-  // Draw image on canvas
-  const drawImageOnCanvas = async () => {
-    const input = imageInputRef.current;
-    if (!input?.files?.length) {
-      alert('Выберите изображение');
-      return;
-    }
-    
-    const file = input.files[0];
-    const startX = parseInt(imageUploadX) || 0;
-    const startY = parseInt(imageUploadY) || 0;
-    
-    const img = new Image();
-    img.onload = async () => {
-      const canvas = document.createElement('canvas');
-      canvas.width = img.width;
-      canvas.height = img.height;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return;
-      
-      ctx.drawImage(img, 0, 0);
-      
-      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      let pixelsToDraw: {x: number, y: number, color: string}[] = [];
-      
-      for (let py = 0; py < canvas.height; py++) {
-        for (let px = 0; px < canvas.width; px++) {
-          const index = (py * canvas.width + px) * 4;
-          const r = imageData.data[index];
-          const g = imageData.data[index + 1];
-          const b = imageData.data[index + 2];
-          const a = imageData.data[index + 3];
-          
-          if (a < 128) continue; // Skip transparent pixels
-          
-          const color = `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
-          pixelsToDraw.push({ x: startX + px, y: startY + py, color });
-        }
-      }
-      
-      if (!confirm(`Нарисовать ${pixelsToDraw.length} пикселей?`)) return;
-      
-      // Send all pixels in parallel batches for speed
-      const userId = localStorage.getItem('p_id') || 'admin';
-      const batchSize = 50; // Send 50 pixels at a time
-      const batches = [];
-      
-      for (let i = 0; i < pixelsToDraw.length; i += batchSize) {
-        batches.push(pixelsToDraw.slice(i, i + batchSize));
-      }
-      
-      // Send all batches in parallel
-      await Promise.all(batches.map(batch => 
-        fetch('/api/pixels', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            pixels: batch,
-            nickname: auth.nick,
-            password: auth.pass,
-            userId
-          }),
-        }).catch(error => console.error('Batch failed:', error))
-      ));
-      
-      alert('Изображение нарисовано!');
-      setImagePreview(null);
-      if (input) input.value = '';
-    };
-    
-    img.onerror = () => {
-      alert('Ошибка загрузки изображения');
-    };
-    
-    img.src = URL.createObjectURL(file);
-  };
-
-  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        setImagePreview(event.target?.result as string);
-      };
-      reader.readAsDataURL(file);
-    }
-  };
-
   const adminAction = async (action: string, target?: string) => {
     try {
       const res = await fetch('/api/pixels', {
@@ -906,147 +812,55 @@ export default function Home() {
     }}>
       
       {isAdmin && (
-        <div style={{ position: 'fixed', left: 10, top: 10, width: '280px', background: '#1a1a1a', padding: '12px', borderRadius: '10px', border: '2px solid #FFD700', fontSize: '11px', zIndex: 2000 }}>
-          <h4 style={{ color: '#FFD700', margin: '0 0 8px 0' }}>ADMIN PANEL</h4>
+        <div style={{ position: 'fixed', left: 10, top: 10, width: '220px', background: '#1a1a1a', padding: '15px', borderRadius: '10px', border: '2px solid #FFD700', fontSize: '11px', zIndex: 2000 }}>
+          <h4 style={{ color: '#FFD700', margin: '0 0 10px 0' }}>ADMIN PANEL</h4>
+          <div style={{ fontSize: '10px', color: '#ccc', marginBottom: '10px', padding: '5px', background: '#222', borderRadius: '3px' }}>
+            <div>ЗАЖАТИЕ: {isSpaceDown ? '✔️ ПРОБЕЛ' : '❌ ПРОБЕЛ'}</div>
+          </div>
+          <button onClick={() => adminAction('get_users')} style={{ width: '100%', marginBottom: '10px', padding: '8px', background: '#333', border: '1px solid #FFD700', borderRadius: '4px', color: '#FFD700', cursor: 'pointer' }}>Обновить статистику</button>
+          <div style={{ maxHeight: '80px', overflowY: 'auto', marginBottom: '10px', background: '#000', padding: '5px' }}>
+            <b>Все юзеры:</b> {adminData.users?.join(', ')}
+          </div>
+          <div style={{ maxHeight: '80px', overflowY: 'auto', marginBottom: '10px', background: '#000', padding: '5px', border: '1px solid #ff4444' }}>
+            <b style={{ color: '#ff6666' }}>Забаненные ID:</b> {adminData.banned?.join(', ') || 'нет'}
+          </div>
+          <input placeholder="ID для бана" value={banInput} onChange={e => setBanInput(e.target.value)} style={{ width: '100%', marginBottom: '5px', padding: '6px', background: '#222', border: '1px solid #444', color: '#fff', borderRadius: '4px' }} />
+          <button onClick={() => adminAction('ban')} style={{ width: '100%', backgroundColor: '#FFD700', color: '#000', marginBottom: '10px', padding: '8px', border: 'none', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer' }}>ЗАБАНИТЬ ПО ID</button>
+          <button onClick={() => { if(confirm('Очистить поле?')) adminAction('clear_all') }} style={{ width: '100%', backgroundColor: '#333', color: '#fff', padding: '8px', border: '1px solid #444', borderRadius: '4px', cursor: 'pointer', marginBottom: '10px' }}>ОЧИСТИТЬ ПОЛЕ</button>
           
-          {/* Canvas Management - Separated Buttons */}
-          <div style={{ display: 'flex', gap: '5px', marginBottom: '10px' }}>
-            <button 
-              onClick={() => adminAction('canvas_toggle')}
-              style={{ 
-                flex: 1,
-                padding: '8px', 
-                background: canvasVisible ? '#ff4444' : '#4CAF50', 
-                border: 'none', 
-                borderRadius: '4px', 
-                color: '#fff', 
-                cursor: 'pointer',
-                fontWeight: 'bold',
-                fontSize: '10px'
-              }}
-            >
-              {canvasVisible ? '❌ ОТКЛ CANVAS' : '✅ ВКЛ CANVAS'}
-            </button>
-            <button 
-              onClick={() => { if(confirm('Очистить поле?')) adminAction('clear_all') }}
-              style={{ 
-                flex: 1,
-                backgroundColor: '#333', 
-                color: '#fff', 
-                padding: '8px', 
-                border: '1px solid #444', 
-                borderRadius: '4px', 
-                cursor: 'pointer',
-                fontSize: '10px'
-              }}
-            >
-              🗑️ ОЧИСТИТЬ
-            </button>
+          <div style={{ borderTop: '1px solid #444', margin: '10px 0' }} />
+          
+          <div style={{ fontSize: '10px', color: '#FFD700', marginBottom: '5px' }}>CANVAS УПРАВЛЕНИЕ</div>
+          <button 
+            onClick={() => adminAction('canvas_toggle')}
+            style={{ 
+              width: '100%', 
+              marginBottom: '5px', 
+              padding: '8px', 
+              background: canvasVisible ? '#ff4444' : '#4CAF50', 
+              border: 'none', 
+              borderRadius: '4px', 
+              color: '#fff', 
+              cursor: 'pointer',
+              fontWeight: 'bold'
+            }}
+          >
+            {canvasVisible ? '❌ ОТКЛЮЧИТЬ CANVAS' : '✅ ВКЛЮЧИТЬ CANVAS'}
+          </button>
+          
+          <div style={{ borderTop: '1px solid #444', margin: '10px 0' }} />
+          
+          <div style={{ fontSize: '10px', color: '#FFD700', marginBottom: '5px' }}>ЧАТ УПРАВЛЕНИЕ</div>
+          <button onClick={() => { if(confirm('Очистить чат?')) chatAdminAction('clear_chat') }} style={{ width: '100%', backgroundColor: '#ff4444', color: '#fff', padding: '8px', border: 'none', borderRadius: '4px', cursor: 'pointer', marginBottom: '5px' }}>ОЧИСТИТЬ ЧАТ</button>
+          
+          <div style={{ display: 'flex', gap: '5px', marginBottom: '5px' }}>
+            <input placeholder="ID (gen_ник)" value={chatMuteInput} onChange={e => setChatMuteInput(e.target.value)} style={{ flex: 1, padding: '6px', background: '#222', border: '1px solid #444', color: '#fff', borderRadius: '4px' }} />
+            <input type="number" placeholder="Мин" value={chatMuteDuration} onChange={e => setChatMuteDuration(e.target.value)} style={{ width: '60px', padding: '6px', background: '#222', border: '1px solid #444', color: '#fff', borderRadius: '4px' }} />
           </div>
           
-          <div style={{ borderTop: '1px solid #444', margin: '8px 0', paddingTop: '8px' }}>
-            <div style={{ fontSize: '10px', color: '#FFD700', marginBottom: '5px' }}>ВСЕ ЮЗЕРЫ</div>
-            <div style={{ maxHeight: '50px', overflowY: 'auto', marginBottom: '5px', background: '#000', padding: '5px', fontSize: '9px', wordBreak: 'break-all' }}>
-              {adminData.users?.join(', ') || 'нет'}
-            </div>
-            <div style={{ fontSize: '10px', color: '#ff6666', marginBottom: '5px' }}>ЗАБАНЕННЫЕ</div>
-            <div style={{ maxHeight: '50px', overflowY: 'auto', background: '#000', padding: '5px', fontSize: '9px', wordBreak: 'break-all', border: '1px solid #ff4444', borderRadius: '4px' }}>
-              {adminData.banned?.join(', ') || 'нет'}
-            </div>
-          </div>
-          
-          {/* Image Upload Section */}
-          <div style={{ borderTop: '1px solid #444', margin: '8px 0', paddingTop: '8px' }}>
-            <div style={{ fontSize: '10px', color: '#FFD700', marginBottom: '5px' }}>НАРИСОВАТЬ КАРТИНКУ</div>
-            <div style={{ display: 'flex', gap: '5px', marginBottom: '5px' }}>
-              <input 
-                type="number" 
-                placeholder="X" 
-                value={imageUploadX} 
-                onChange={e => setImageUploadX(e.target.value)}
-                style={{ width: '60px', padding: '6px', background: '#222', border: '1px solid #444', color: '#fff', borderRadius: '4px' }} 
-              />
-              <input 
-                type="number" 
-                placeholder="Y" 
-                value={imageUploadY} 
-                onChange={e => setImageUploadY(e.target.value)}
-                style={{ width: '60px', padding: '6px', background: '#222', border: '1px solid #444', color: '#fff', borderRadius: '4px' }} 
-              />
-            </div>
-            <input 
-              type="file" 
-              accept="image/*"
-              ref={imageInputRef}
-              onChange={handleImageSelect}
-              style={{ display: 'none' }}
-            />
-            <button 
-              onClick={() => imageInputRef.current?.click()}
-              style={{ 
-                width: '100%', 
-                marginBottom: '5px', 
-                padding: '8px', 
-                background: '#333', 
-                border: '1px solid #FFD700', 
-                borderRadius: '4px', 
-                color: '#FFD700', 
-                cursor: 'pointer',
-                fontSize: '10px'
-              }}
-            >
-              📁 ВЫБРАТЬ КАРТИНКУ
-            </button>
-            {imagePreview && (
-              <div style={{ marginBottom: '5px' }}>
-                <img src={imagePreview} alt="Preview" style={{ width: '100%', borderRadius: '4px', border: '1px solid #444' }} />
-              </div>
-            )}
-            <button 
-              onClick={drawImageOnCanvas}
-              disabled={!imagePreview}
-              style={{ 
-                width: '100%', 
-                padding: '8px', 
-                background: imagePreview ? '#4CAF50' : '#333', 
-                border: 'none', 
-                borderRadius: '4px', 
-                color: '#fff', 
-                cursor: imagePreview ? 'pointer' : 'not-allowed',
-                fontWeight: 'bold',
-                fontSize: '10px'
-              }}
-            >
-              🎨 НАРИСОВАТЬ
-            </button>
-          </div>
-          
-          <div style={{ borderTop: '1px solid #444', margin: '8px 0', paddingTop: '8px' }}>
-            <div style={{ fontSize: '10px', color: '#FFD700', marginBottom: '5px' }}>СТАТИСТИКА</div>
-            <div style={{ maxHeight: '60px', overflowY: 'auto', marginBottom: '5px', background: '#000', padding: '5px', fontSize: '9px' }}>
-              <b>Онлайн:</b> {adminData.onlineUsers?.join(', ') || 'нет'}
-            </div>
-            <button onClick={() => adminAction('get_users')} style={{ width: '100%', padding: '6px', background: '#333', border: '1px solid #FFD700', borderRadius: '4px', color: '#FFD700', cursor: 'pointer', fontSize: '10px' }}>🔄 ОБНОВИТЬ</button>
-          </div>
-          
-          <div style={{ borderTop: '1px solid #444', margin: '8px 0', paddingTop: '8px' }}>
-            <div style={{ fontSize: '10px', color: '#FFD700', marginBottom: '5px' }}>БАН/МУТ</div>
-            <input placeholder="ID для бана" value={banInput} onChange={e => setBanInput(e.target.value)} style={{ width: '100%', marginBottom: '5px', padding: '6px', background: '#222', border: '1px solid #444', color: '#fff', borderRadius: '4px', fontSize: '10px' }} />
-            <button onClick={() => adminAction('ban')} style={{ width: '100%', backgroundColor: '#ff4444', color: '#fff', marginBottom: '8px', padding: '6px', border: 'none', borderRadius: '4px', fontWeight: 'bold', fontSize: '10px' }}>🚫 ЗАБАНИТЬ</button>
-            
-            <div style={{ display: 'flex', gap: '5px', marginBottom: '5px' }}>
-              <input placeholder="ID (gen_ник)" value={chatMuteInput} onChange={e => setChatMuteInput(e.target.value)} style={{ flex: 1, padding: '6px', background: '#222', border: '1px solid #444', color: '#fff', borderRadius: '4px', fontSize: '10px' }} />
-              <input type="number" placeholder="Мин" value={chatMuteDuration} onChange={e => setChatMuteDuration(e.target.value)} style={{ width: '50px', padding: '6px', background: '#222', border: '1px solid #444', color: '#fff', borderRadius: '4px', fontSize: '10px' }} />
-            </div>
-            
-            <div style={{ display: 'flex', gap: '5px' }}>
-              <button onClick={() => { if(chatMuteInput && chatMuteDuration) { chatAdminAction('mute', { targetId: chatMuteInput, duration: parseInt(chatMuteDuration) }); setChatMuteInput(''); } }} style={{ flex: 1, backgroundColor: '#ff6600', color: '#fff', padding: '6px', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '10px' }}>🔇 МУТ</button>
-              <button onClick={() => { if(chatMuteInput) { chatAdminAction('unmute', { targetId: chatMuteInput }); setChatMuteInput(''); } }} style={{ flex: 1, backgroundColor: '#4CAF50', color: '#fff', padding: '6px', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '10px' }}>🔊 РАЗМУТ</button>
-            </div>
-          </div>
-          
-          <div style={{ borderTop: '1px solid #444', margin: '8px 0', paddingTop: '8px' }}>
-            <button onClick={() => { if(confirm('Очистить чат?')) chatAdminAction('clear_chat') }} style={{ width: '100%', backgroundColor: '#ff4444', color: '#fff', padding: '8px', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '10px' }}>💬 ОЧИСТИТЬ ЧАТ</button>
+          <div style={{ display: 'flex', gap: '5px' }}>
+            <button onClick={() => { if(chatMuteInput && chatMuteDuration) { chatAdminAction('mute', { targetId: chatMuteInput, duration: parseInt(chatMuteDuration) }); setChatMuteInput(''); } }} style={{ flex: 1, backgroundColor: '#ff6600', color: '#fff', padding: '8px', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '10px' }}>МУТ</button>
+            <button onClick={() => { if(chatMuteInput) { chatAdminAction('unmute', { targetId: chatMuteInput }); setChatMuteInput(''); } }} style={{ flex: 1, backgroundColor: '#4CAF50', color: '#fff', padding: '8px', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '10px' }}>РАЗМУТ</button>
           </div>
         </div>
       )}
