@@ -60,7 +60,7 @@ export default function Home() {
   
   const dragStartPosRef = useRef<{x: number, y: number} | null>(null);
   const isClickActionRef = useRef<boolean>(true);
-  const sizeX = 180;
+  const sizeX = 270;
   const sizeY = 180;
   const pixelScale = 10;
 
@@ -1155,7 +1155,7 @@ export default function Home() {
                   color: '#666', 
                   fontSize: '11px'
                 }}>
-                  Нет сообщений. Напишите первое!
+                  Сорян😔 но чат не работает😭
                 </div>
               )}
             </div>
@@ -1166,7 +1166,7 @@ export default function Home() {
                 value={chatInput}
                 onChange={(e) => setChatInput(e.target.value)}
                 onKeyDown={handleChatKeyDown}
-                placeholder="Сообщение..."
+                placeholder="Сорян😔 но чат не работает😭"
                 style={{
                   flex: 1,
                   padding: '10px',
