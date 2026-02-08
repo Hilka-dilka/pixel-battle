@@ -180,13 +180,37 @@ export default function Home() {
       const res = await fetch('/api/messages');
       if (res.ok) {
         const data = await res.json();
-        const msgs = (data.messages || []).map((m: any) => ({
-          ...m,
-          time: new Date(m.time).toLocaleTimeString()
-        }));
-        setChatMessages(msgs);
-        localStorage.setItem('chat_messages', JSON.stringify(msgs));
-        chatLoadedRef.current = true;
+        const serverMsgs = data.messages || [];
+        
+        if (serverMsgs.length > 0) {
+          // Если есть сообщения на сервере, используем их
+          const msgs = serverMsgs.map((m: any) => ({
+            ...m,
+            time: new Date(m.time).toLocaleTimeString()
+          }));
+          setChatMessages(msgs);
+          localStorage.setItem('chat_messages', JSON.stringify(msgs));
+          chatLoadedRef.current = true;
+          return;
+        }
+        
+        // Если сервер вернул пустой массив, пробуем загрузить из localStorage
+        const saved = localStorage.getItem('chat_messages');
+        if (saved) {
+          try {
+            const msgs = JSON.parse(saved);
+            if (Array.isArray(msgs) && msgs.length > 0) {
+              setChatMessages(msgs);
+              chatLoadedRef.current = true;
+            }
+          } catch (e) {
+            console.error('Failed to parse saved messages:', e);
+          }
+        } else {
+          // Нет сообщений нигде - используем пустой массив
+          setChatMessages([]);
+          chatLoadedRef.current = true;
+        }
         return;
       }
     } catch (error) {
