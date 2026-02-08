@@ -3,7 +3,19 @@ import { Redis } from '@upstash/redis';
 import { NextResponse } from 'next/server';
 import Pusher from 'pusher';
 
-const redis = Redis.fromEnv();
+// Check if Redis environment variables are set
+const redisUrl = process.env.UPSTASH_REDIS_REST_URL;
+const redisToken = process.env.UPSTASH_REDIS_REST_TOKEN;
+
+let redis: Redis | null = null;
+if (redisUrl && redisToken) {
+  redis = new Redis({
+    url: redisUrl,
+    token: redisToken,
+  });
+} else {
+  console.warn('Redis environment variables not set. Using fallback mode.');
+}
 
 const pusher = new Pusher({
   appId: "2112054",
@@ -14,6 +26,10 @@ const pusher = new Pusher({
 });
 
 export async function GET() {
+  if (!redis) {
+    return NextResponse.json({ error: 'Redis not configured. Please set UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN environment variables.' }, { status: 503 });
+  }
+  
   try {
     // Получаем пиксели
     const pixels = await redis.hgetall('board');
@@ -36,6 +52,10 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
+  if (!redis) {
+    return NextResponse.json({ error: 'Redis not configured. Please set UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN environment variables.' }, { status: 503 });
+  }
+  
   try {
     const body = await req.json();
     
