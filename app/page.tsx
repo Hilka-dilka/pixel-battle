@@ -289,7 +289,7 @@ export default function Home() {
       } catch (e) {
         console.error('Polling error:', e);
       }
-    }, 10);
+    }, 2000); // Poll every 2 seconds
 
     channel.bind('chat-message', (update: any) => {
       setChatMessages(prev => {
