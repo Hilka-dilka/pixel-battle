@@ -75,6 +75,8 @@ export async function POST(req: Request) {
       // Отправляем уведомления (можно пакетами)
       for (const notification of pixelNotifications) {
         await pusher.trigger('pixel-channel', 'new-pixel', notification);
+        // Небольшая задержка между уведомлениями для предотвращения rate limiting
+        await new Promise(resolve => setTimeout(resolve, 10));
       }
       
       return NextResponse.json({ ok: true, count: pixels.length });
