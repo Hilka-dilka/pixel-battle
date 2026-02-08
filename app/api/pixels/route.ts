@@ -93,11 +93,6 @@ export async function POST(req: Request) {
       }
     } else {
       // Регистрация нового пользователя
-      // Проверяем, не пытается ли создать администратора
-      if (nickname.toLowerCase() === 'admin') {
-        return NextResponse.json({ error: 'Cannot create admin account' }, { status: 403 });
-      }
-      
       await redis.set(authKey, password);
       await redis.sadd('all_users', nickname);
     }

@@ -270,6 +270,7 @@ export default function Home() {
       setPixels(prev => ({ ...prev, [update.key]: update.data }));
     });
 
+<<<<<<< HEAD
     // Polling fallback for real-time updates (works without Pusher)
     const pollInterval = setInterval(async () => {
       try {
@@ -291,6 +292,8 @@ export default function Home() {
       }
     }, 2000); // Poll every 2 seconds
 
+=======
+>>>>>>> 44bcc73a94cc1da420bf3afc05d456dced929266
     channel.bind('chat-message', (update: any) => {
       setChatMessages(prev => {
         const newMsg = { 
@@ -370,7 +373,10 @@ export default function Home() {
     window.addEventListener('wheel', handleWheelGlobal, { passive: false });
 
     return () => { 
+<<<<<<< HEAD
       clearInterval(pollInterval);
+=======
+>>>>>>> 44bcc73a94cc1da420bf3afc05d456dced929266
       pusher.unsubscribe('pixel-channel'); 
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
