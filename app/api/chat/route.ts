@@ -2,7 +2,19 @@ import { Redis } from '@upstash/redis';
 import { NextResponse } from 'next/server';
 import Pusher from 'pusher';
 
-const redis = Redis.fromEnv();
+// Check if Redis environment variables are set
+const redisUrl = process.env.UPSTASH_REDIS_REST_URL;
+const redisToken = process.env.UPSTASH_REDIS_REST_TOKEN;
+
+let redis: Redis | null = null;
+if (redisUrl && redisToken) {
+  redis = new Redis({
+    url: redisUrl,
+    token: redisToken,
+  });
+} else {
+  console.warn('Redis not configured in chat API');
+}
 
 const pusher = new Pusher({
   appId: "2112054",
@@ -14,6 +26,10 @@ const pusher = new Pusher({
 
 // GET - получить сообщения и мут статус
 export async function GET(req: Request) {
+  if (!redis) {
+    return NextResponse.json({ messages: [], isMuted: false, muteUntil: null });
+  }
+  
   try {
     const { searchParams } = new URL(req.url);
     const userId = searchParams.get('userId');
@@ -48,12 +64,16 @@ export async function GET(req: Request) {
     return NextResponse.json({ messages, isMuted, muteUntil });
   } catch (e) {
     console.error('GET messages error:', e);
-    return NextResponse.json({ error: 'Failed to fetch messages' }, { status: 500 });
+    return NextResponse.json({ messages: [], isMuted: false, muteUntil: null });
   }
 }
 
 // POST - отправить сообщение, очистить чат, мут
 export async function POST(req: Request) {
+  if (!redis) {
+    return NextResponse.json({ error: 'Redis not configured. Please set UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN environment variables.' }, { status: 503 });
+  }
+  
   try {
     const body = await req.json();
     const { nickname, text, action, adminPassword, userId } = body;
