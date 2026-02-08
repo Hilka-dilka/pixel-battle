@@ -270,6 +270,27 @@ export default function Home() {
       setPixels(prev => ({ ...prev, [update.key]: update.data }));
     });
 
+    // Polling fallback for real-time updates (works without Pusher)
+    const pollInterval = setInterval(async () => {
+      try {
+        const res = await fetch('/api/pixels');
+        if (res.ok) {
+          const data = await res.json();
+          const parsed: any = {};
+          for (const k in data.pixels || {}) {
+            try { 
+              parsed[k] = typeof data.pixels[k] === 'string' ? JSON.parse(data.pixels[k]) : data.pixels[k]; 
+            } catch(e) { 
+              parsed[k] = { color: data.pixels[k], user: '???' }; 
+            }
+          }
+          setPixels(parsed);
+        }
+      } catch (e) {
+        console.error('Polling error:', e);
+      }
+    }, 2000); // Poll every 2 seconds
+
     channel.bind('chat-message', (update: any) => {
       setChatMessages(prev => {
         const newMsg = { 
@@ -349,6 +370,7 @@ export default function Home() {
     window.addEventListener('wheel', handleWheelGlobal, { passive: false });
 
     return () => { 
+      clearInterval(pollInterval);
       pusher.unsubscribe('pixel-channel'); 
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
