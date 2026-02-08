@@ -50,10 +50,6 @@ export default function Home() {
   const [imageUploadY, setImageUploadY] = useState('0');
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
-  
-  // Background image state
-  const [backgroundImage, setBackgroundImage] = useState<string | null>(null);
-  const backgroundImageRef = useRef<HTMLImageElement | null>(null);
   const isSendingRef = useRef(false);
   const chatLoadedRef = useRef(false);
   const chatContainerRef = useRef<HTMLDivElement>(null);
@@ -85,11 +81,6 @@ export default function Home() {
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, sizeX * pixelScale, sizeY * pixelScale);
     
-    // Draw background image if exists
-    if (backgroundImage && backgroundImageRef.current) {
-      ctx.drawImage(backgroundImageRef.current, 0, 0, sizeX * pixelScale, sizeY * pixelScale);
-    }
-    
     // Draw all pixels
     for (const key in pixels) {
       const [x, y] = key.split('-').map(Number);
@@ -98,25 +89,10 @@ export default function Home() {
     }
   };
 
-  // Load background image when it changes
-  useEffect(() => {
-    if (backgroundImage) {
-      const img = new Image();
-      img.onload = () => {
-        backgroundImageRef.current = img;
-        drawCanvas();
-      };
-      img.src = backgroundImage;
-    } else {
-      backgroundImageRef.current = null;
-      drawCanvas();
-    }
-  }, [backgroundImage]);
-
   // Redraw canvas when pixels change
   useEffect(() => {
     drawCanvas();
-  }, [pixels, backgroundImage]);
+  }, [pixels]);
 
   const downloadCanvas = () => {
     const canvas = canvasElementRef.current;
@@ -290,12 +266,6 @@ export default function Home() {
         if (data.canvasVisible === false) {
           setCanvasVisible(false);
         }
-        // Загружаем фоновую картинку
-        if (data.backgroundImage) {
-          setBackgroundImage(data.backgroundImage);
-        } else {
-          setBackgroundImage(null);
-        }
       })
       .catch(err => console.error('Failed to load pixels:', err));
 
@@ -338,10 +308,6 @@ export default function Home() {
       if (!update.visible) {
         alert('Canvas отключён админом');
       }
-    });
-
-    channel.bind('background_update', (update: any) => {
-      setBackgroundImage(update.image);
     });
 
     channel.bind('user_muted', (update: any) => {
@@ -673,83 +639,6 @@ export default function Home() {
     }
   };
 
-  // Upload background image for all users
-  const uploadBackgroundImage = async () => {
-    const input = imageInputRef.current;
-    if (!input?.files?.length) {
-      alert('Выберите изображение');
-      return;
-    }
-    
-    const file = input.files[0];
-    
-    // Check file size (limit to ~500KB for Redis)
-    if (file.size > 500000) {
-      alert('Файл слишком большой! Максимум 500KB');
-      return;
-    }
-    
-    const reader = new FileReader();
-    reader.onload = async (event) => {
-      const imageData = event.target?.result as string;
-      
-      if (!confirm('Установить это изображение как фон для ВСЕХ пользователей?')) return;
-      
-      try {
-        const res = await fetch('/api/pixels', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            action: 'set_background',
-            imageData,
-            nickname: auth.nick,
-            password: auth.pass
-          }),
-        });
-        
-        if (res.ok) {
-          alert('Фон установлен!');
-          setImagePreview(null);
-          if (input) input.value = '';
-        } else {
-          const data = await res.json();
-          alert(data.error || 'Ошибка');
-        }
-      } catch (error) {
-        console.error('Upload error:', error);
-        alert('Ошибка загрузки');
-      }
-    };
-    reader.readAsDataURL(file);
-  };
-
-  // Clear background image
-  const clearBackgroundImage = async () => {
-    if (!confirm('Убрать фон для ВСЕХ пользователей?')) return;
-    
-    try {
-      const res = await fetch('/api/pixels', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'clear_background',
-          nickname: auth.nick,
-          password: auth.pass
-        }),
-      });
-      
-      if (res.ok) {
-        alert('Фон убран!');
-      } else {
-        const data = await res.json();
-        alert(data.error || 'Ошибка');
-      }
-    } catch (error) {
-      console.error('Clear background error:', error);
-      alert('Ошибка');
-    }
-  };
-
   const adminAction = async (action: string, target?: string) => {
     try {
       const res = await fetch('/api/pixels', {
@@ -1066,9 +955,25 @@ export default function Home() {
             </div>
           </div>
           
-          {/* Background Image Section */}
+          {/* Image Upload Section */}
           <div style={{ borderTop: '1px solid #444', margin: '8px 0', paddingTop: '8px' }}>
-            <div style={{ fontSize: '10px', color: '#FFD700', marginBottom: '5px' }}>ФОН (ДЛЯ ВСЕХ)</div>
+            <div style={{ fontSize: '10px', color: '#FFD700', marginBottom: '5px' }}>НАРИСОВАТЬ КАРТИНКУ</div>
+            <div style={{ display: 'flex', gap: '5px', marginBottom: '5px' }}>
+              <input 
+                type="number" 
+                placeholder="X" 
+                value={imageUploadX} 
+                onChange={e => setImageUploadX(e.target.value)}
+                style={{ width: '60px', padding: '6px', background: '#222', border: '1px solid #444', color: '#fff', borderRadius: '4px' }} 
+              />
+              <input 
+                type="number" 
+                placeholder="Y" 
+                value={imageUploadY} 
+                onChange={e => setImageUploadY(e.target.value)}
+                style={{ width: '60px', padding: '6px', background: '#222', border: '1px solid #444', color: '#fff', borderRadius: '4px' }} 
+              />
+            </div>
             <input 
               type="file" 
               accept="image/*"
@@ -1090,52 +995,30 @@ export default function Home() {
                 fontSize: '10px'
               }}
             >
-              📁 ВЫБРАТЬ ФОН
+              📁 ВЫБРАТЬ КАРТИНКУ
             </button>
             {imagePreview && (
               <div style={{ marginBottom: '5px' }}>
                 <img src={imagePreview} alt="Preview" style={{ width: '100%', borderRadius: '4px', border: '1px solid #444' }} />
               </div>
             )}
-            <div style={{ display: 'flex', gap: '5px' }}>
-              <button 
-                onClick={uploadBackgroundImage}
-                disabled={!imagePreview}
-                style={{ 
-                  flex: 1,
-                  padding: '8px', 
-                  background: imagePreview ? '#4CAF50' : '#333', 
-                  border: 'none', 
-                  borderRadius: '4px', 
-                  color: '#fff', 
-                  cursor: imagePreview ? 'pointer' : 'not-allowed',
-                  fontWeight: 'bold',
-                  fontSize: '10px'
-                }}
-              >
-                ✅ УСТАНОВИТЬ
-              </button>
-              <button 
-                onClick={clearBackgroundImage}
-                style={{ 
-                  flex: 1,
-                  padding: '8px', 
-                  background: backgroundImage ? '#ff4444' : '#333', 
-                  border: 'none', 
-                  borderRadius: '4px', 
-                  color: '#fff', 
-                  cursor: 'pointer',
-                  fontSize: '10px'
-                }}
-              >
-                ❌ УБРАТЬ
-              </button>
-            </div>
-            {backgroundImage && (
-              <div style={{ fontSize: '9px', color: '#4CAF50', marginTop: '5px', textAlign: 'center' }}>
-                Фон установлен
-              </div>
-            )}
+            <button 
+              onClick={drawImageOnCanvas}
+              disabled={!imagePreview}
+              style={{ 
+                width: '100%', 
+                padding: '8px', 
+                background: imagePreview ? '#4CAF50' : '#333', 
+                border: 'none', 
+                borderRadius: '4px', 
+                color: '#fff', 
+                cursor: imagePreview ? 'pointer' : 'not-allowed',
+                fontWeight: 'bold',
+                fontSize: '10px'
+              }}
+            >
+              🎨 НАРИСОВАТЬ
+            </button>
           </div>
           
           <div style={{ borderTop: '1px solid #444', margin: '8px 0', paddingTop: '8px' }}>
