@@ -289,7 +289,7 @@ export default function Home() {
       } catch (e) {
         console.error('Polling error:', e);
       }
-    }, 80); // Poll every 1 second
+    }, 1000); // Poll every 1 second
 
     channel.bind('chat-message', (update: any) => {
       setChatMessages(prev => {
@@ -560,6 +560,9 @@ export default function Home() {
           localStorage.clear();
         }
       } else {
+        // Update canvas immediately without waiting for polling
+        const key = `${x}-${y}`;
+        setPixels(prev => ({ ...prev, [key]: { color: selectedColor, user: auth.nick, userId } }));
         setTimeout(() => loadPlayerStats(), 500);
       }
     } catch (error) {
