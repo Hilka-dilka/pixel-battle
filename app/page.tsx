@@ -276,18 +276,6 @@ export default function Home() {
       setPixels(prev => ({ ...prev, [update.key]: update.data }));
     });
 
-    channel.bind('batch-pixels', (update: any) => {
-      if (update.pixels && Array.isArray(update.pixels)) {
-        setPixels(prev => {
-          const newPixels = { ...prev };
-          for (const pixel of update.pixels) {
-            newPixels[pixel.key] = pixel.data;
-          }
-          return newPixels;
-        });
-      }
-    });
-
     channel.bind('chat-message', (update: any) => {
       setChatMessages(prev => {
         const newMsg = { 

@@ -72,10 +72,10 @@ export async function POST(req: Request) {
         await redis.hset('board', pixelDataToSave);
       }
       
-      // Отправляем одно уведомление о пакетном обновлении
-      await pusher.trigger('pixel-channel', 'batch-pixels', { 
-        pixels: pixelNotifications 
-      });
+      // Отправляем уведомления (можно пакетами)
+      for (const notification of pixelNotifications) {
+        await pusher.trigger('pixel-channel', 'new-pixel', notification);
+      }
       
       return NextResponse.json({ ok: true, count: pixels.length });
     }
