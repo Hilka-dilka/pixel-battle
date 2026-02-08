@@ -18,6 +18,9 @@ export async function GET() {
     // Получаем пиксели
     const pixels = await redis.hgetall('board');
     
+    // Получаем фоновую картинку
+    const backgroundImage = await redis.get('background_image');
+    
     // Получаем сообщения чата
     const chatMessages = await redis.lrange('chat_messages', 0, -1);
     
@@ -26,6 +29,7 @@ export async function GET() {
     
     return NextResponse.json({
       pixels: pixels || {},
+      backgroundImage: backgroundImage || null,
       chatMessages: chatMessages || [],
       canvasVisible: canvasVisible === null ? null : canvasVisible !== '0'
     });
@@ -184,6 +188,24 @@ export async function POST(req: Request) {
         await pusher.trigger('pixel-channel', 'canvas_toggle', { visible: newVisible });
         
         return NextResponse.json({ visible: newVisible });
+      }
+      
+      // Установить фоновую картинку
+      if (action === 'set_background') {
+        const { imageData } = body;
+        if (imageData) {
+          await redis.set('background_image', imageData);
+          await pusher.trigger('pixel-channel', 'background_update', { image: imageData });
+          return NextResponse.json({ ok: true });
+        }
+        return NextResponse.json({ error: 'No image data' }, { status: 400 });
+      }
+      
+      // Очистить фоновую картинку
+      if (action === 'clear_background') {
+        await redis.del('background_image');
+        await pusher.trigger('pixel-channel', 'background_update', { image: null });
+        return NextResponse.json({ ok: true });
       }
     }
 
